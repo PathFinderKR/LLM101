@@ -1,4 +1,4 @@
-train_strategy: "steps" # steps or epochs
+train_strategy: "epochs" # steps or epochs
 epochs: 1
 max_steps: 1000
 val_interval: 500
@@ -16,6 +16,6 @@ mixed_precision: False
 seed: 101
 
 dataset_path: data/raw/shakespeare.txt
-val_size: 0.05
+val_size: 0.1
 
 project: LLM101

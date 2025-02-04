@@ -34,9 +34,6 @@ class MegabyteConfig:
     local_config: GPTConfig
 
     def __post_init__(self):
-        if self.patch_size <= 2:
-            raise ValueError("patch_size cannot be less than 2")
-
         # Global
         self.global_config = GPTConfig(
             vocab_size=self.vocab_size,
@@ -57,6 +54,11 @@ class MegabyteConfig:
             d_ff=self.local_config.d_ff,
             dropout=self.local_config.dropout
         )
+
+        if self.patch_size <= 2:
+            raise ValueError("patch_size cannot be less than 2")
+        if self.global_config.d_embed != self.local_config.d_embed:
+            raise ValueError("global_config.d_embed must be equal to local_config.d_embed")
 
 
 class CasualSelfAttention(nn.Module):
@@ -262,7 +264,7 @@ class MEGABYTE(nn.Module):
             global_output,
             "b t (p e) -> (b t) p e",
             p=self.config.patch_size
-        )  # (batch_size * patch_num, patch_size, vocab_size)
+        )  # (batch_size * patch_num, patch_size, d_embed)
         local_bytes_embedded = self.local_model.embed(bytes_local)  # (batch_size * patch_num, patch_size, d_embed)
         local_in = local_bytes_embedded + global_output_reshaped  # (batch_size * patch_num, patch_size, d_embed)
         local_output = self.local_model(local_in)  # (batch_size * patch_num, patch_size, vocab_size)
