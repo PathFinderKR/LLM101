@@ -1,0 +1,4 @@
+prompt: "To be or not to be, that is the question."
+max_new_tokens: 1000
+temperature: 1
+seed: 101

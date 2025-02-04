@@ -1,0 +1,5 @@
+/.env
+/wandb/
+/models/bigram/checkpoints/
+/models/gpt/checkpoints/
+/models/megabyte/checkpoints/

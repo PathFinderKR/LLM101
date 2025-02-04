@@ -1,0 +1,21 @@
+train_strategy: "steps" # steps or epochs
+epochs: 1
+max_steps: 1000
+val_interval: 500
+batch_size: 64
+optimizer:
+  name: AdamW  # AdamW or SGD
+  params:
+    lr: 0.001
+    weight_decay: 0.01
+scheduler:
+  type: cosine  # linear or cosine
+  warmup_ratio: 0.1
+grad_clip: 1.0
+mixed_precision: False
+seed: 101
+
+dataset_path: data/raw/shakespeare.txt
+val_size: 0.05
+
+project: LLM101

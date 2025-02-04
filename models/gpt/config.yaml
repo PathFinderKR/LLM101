@@ -1,0 +1,12 @@
+type: gpt
+
+# Model parameters
+context_size: 8
+n_layer: 2
+n_head: 2
+d_embed: 128
+d_ff: 512
+dropout: 0.2
+flash_attention: False
+
+model_path: models/gpt/checkpoints/gpt.pth
