@@ -378,9 +378,7 @@ def preprocess_dataset(dataset: Dataset, tokenizer: CharTokenizer | BPETokenizer
     return train_dataset, val_dataset
 
 
-def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR,
-                current_epoch: int, total_epochs: int, grad_clip: float,
-                device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, current_epoch: int, total_epochs: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
     """
     Train the model for one epoch.
 
@@ -421,15 +419,14 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     print(f"Epoch {current_epoch+1}/{total_epochs} Loss: {running_loss / len(dataloader):.4f}")
 
 
-def train_steps(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR,
-                max_steps: int, grad_clip: float, val_interval: int,
-                device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, max_steps: int, val_interval: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
     """
     Train the model for a fixed number of steps.
 
     Args:
         model (nn.Module): The model to train.
-        dataloader (DataLoader): DataLoader for the training data.
+        train_loader (DataLoader): DataLoader for the training data.
+        val_loader (DataLoader): DataLoader for the validation data.
         optimizer (Optimizer): Optimizer to use.
         scheduler (lr_scheduler): Learning rate scheduler.
         max_steps (int): Maximum number of steps to train.
@@ -441,7 +438,7 @@ def train_steps(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     model.train()
     running_loss = 0.0
     current_step = 0
-    progress_bar = tqdm(enumerate(dataloader), total=max_steps, desc="Training")
+    progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
     while current_step < max_steps:
         for batch_idx, (inputs, targets) in progress_bar:
             if current_step >= max_steps:
@@ -460,7 +457,7 @@ def train_steps(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
             progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
 
             if current_step % (val_interval + 1) == 0:
-                evaluate(model, dataloader, device, wandb_run)
+                evaluate(model, val_loader, device, wandb_run)
 
             if wandb_run is not None:
                 wandb_run.log({
@@ -507,8 +504,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wan
     print(f"Validation Loss: {avg_loss:.4f}, Perplexity: {perplexity:.4f}")
 
 
-def train(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, train_config: dict,
-          device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+def train(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, train_config: dict, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
     """
     Train the model.
 
@@ -532,7 +528,7 @@ def train(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, tr
     elif train_config["train_strategy"] == "steps":
         print(f"Training for {train_config['max_steps']} steps")
         scheduler = setup_scheduler(optimizer, train_config["scheduler"]["type"], train_config["scheduler"]["warmup_ratio"], train_config["max_steps"])
-        train_steps(model, train_loader, optimizer, scheduler, train_config["max_steps"], train_config["grad_clip"], train_config["val_interval"], device, wandb_run)
+        train_steps(model, train_loader, val_loader, optimizer, scheduler, train_config["max_steps"], train_config["val_interval"], train_config["grad_clip"], device, wandb_run)
 
     else:
         raise ValueError(f"Unsupported training strategy: {train_config['train_strategy']}")

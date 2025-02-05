@@ -16,6 +16,6 @@ mixed_precision: False
 seed: 101
 
 dataset:  shakespeare  # shakespeare or openweb
-val_size: 0.01
+val_size: 0.1
 
 project: LLM101
