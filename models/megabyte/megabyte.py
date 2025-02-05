@@ -309,7 +309,7 @@ class MEGABYTE(nn.Module):
             next_token = torch.multinomial(probs, num_samples=1)  # (batch_size=1, 1)
 
             # Concatenate
-            x = torch.cat((x, next_token), dim=-1)  # (batch_size=1, context_size + 1)
+            x = torch.cat((x, next_token), dim=-1)  # (batch_size=1, patch_num * patch_size + 1)
 
             # Decode
             text = tokenizer.decode([next_token[0].item()])

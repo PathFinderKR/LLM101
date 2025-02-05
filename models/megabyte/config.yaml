@@ -1,4 +1,4 @@
-type: megabyte
+name: megabyte
 
 # Model parameters
 pad_id: 1  # "<|eot_id|>" token
@@ -16,5 +16,3 @@ local:
   d_embed: 256
   d_ff: 1024
   dropout: 0.2
-
-model_path: models/megabyte/checkpoints/megabyte.pth

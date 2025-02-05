@@ -1,4 +1,4 @@
-train_strategy: "epochs" # steps or epochs
+train_strategy: "steps" # steps or epochs
 epochs: 1
 max_steps: 1000
 val_interval: 500
@@ -15,7 +15,7 @@ grad_clip: 1.0
 mixed_precision: False
 seed: 101
 
-dataset_path: data/raw/shakespeare.txt
+dataset: shakespeare  # shakespeare or openweb
 val_size: 0.1
 
 project: LLM101

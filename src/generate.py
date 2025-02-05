@@ -16,22 +16,15 @@ def parse_args():
     Returns:
         argparse.Namespace: Command-line arguments.
     """
-    default_generate_config = "configs/generate.yaml"
-    default_model_config = "models/megabyte/config.yaml"
     default_vocab_file = "char_vocab.json"
 
     parser = argparse.ArgumentParser(description='Generate text from a trained model.')
     parser.add_argument(
-        "--generate_config",
+        "--model",
         type=str,
-        default=default_generate_config,
-        help=f"Path to the generate config file. Default: {default_generate_config}"
-    )
-    parser.add_argument(
-        "--model_config",
-        type=str,
-        default=default_model_config,
-        help=f"Path to the model configuration YAML file. Default: {default_model_config}"
+        choices=["bigram", "gpt", "megabyte"],
+        required=True,
+        help="Choose the model architecture."
     )
     parser.add_argument(
         "--vocab_file",
@@ -49,8 +42,8 @@ def main():
     root_dir = os.path.dirname(os.path.abspath(__file__)) + "/../"
 
     # Load the configuration
-    generate_config = load_config(root_dir + args.generate_config)
-    model_config = load_config(root_dir + args.model_config)
+    generate_config = load_config(root_dir + "configs/generate.yaml")
+    model_config = load_config(root_dir + f"models/{args.model}/config.yaml")
 
     # Set the seed for reproducibility
     set_seed(generate_config["seed"])
@@ -63,7 +56,7 @@ def main():
     model = init_model(model_config, tokenizer, device)
 
     # Load the model weights
-    model.load_state_dict(torch.load(root_dir + model_config["model_path"]))
+    model.load_state_dict(torch.load(root_dir + f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt"))
 
     # Generate text
     print("=== Generated Text ===")
