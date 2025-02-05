@@ -437,11 +437,11 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
     """
     model.train()
     running_loss = 0.0
-    current_step = 0
+    current_step = 1
     progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
-    while current_step < max_steps:
+    while current_step <= max_steps:
         for batch_idx, (inputs, targets) in progress_bar:
-            if current_step >= max_steps:
+            if current_step > max_steps:
                 break
 
             inputs, targets = inputs.to(device), targets.to(device)
@@ -456,7 +456,7 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
             current_step += 1
             progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
 
-            if current_step % (val_interval + 1) == 0:
+            if current_step % val_interval == 0:
                 evaluate(model, val_loader, device, wandb_run)
 
             if wandb_run is not None:
