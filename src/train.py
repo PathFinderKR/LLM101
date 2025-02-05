@@ -19,6 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.utils import set_seed, configure_device, load_text, load_config, save_checkpoint, load_checkpoint
 from src.tokenizer import CharTokenizer, BPETokenizer
 from models.bigram.bigram import Bigram, BigramConfig
+from models.mlp.mlp import MLP, MLPConfig
 from models.gpt.gpt import GPT, GPTConfig
 from models.megabyte.megabyte import MEGABYTE, MegabyteConfig
 
@@ -36,7 +37,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["bigram", "gpt", "megabyte"],
+        choices=["bigram", "mlp", "gpt", "megabyte"],
         required=True,
         help="Choose the model architecture."
     )
@@ -132,6 +133,14 @@ def init_model(model_config: dict, tokenizer: CharTokenizer | BPETokenizer, devi
     if model_arch == "bigram":
         model = Bigram(BigramConfig(
             vocab_size=tokenizer.vocab_size
+        ))
+
+    elif model_arch == "mlp":
+        model = MLP(MLPConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=model_config["context_size"],
+            d_embed=model_config["d_embed"],
+            d_ff=model_config["d_ff"]
         ))
 
     elif model_arch == "gpt":
@@ -569,8 +578,9 @@ def main():
             train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["context_size"], train_config["val_size"])
 
     # For OpenWebText dataset, use Hugging Face Datasets
+    # To-do:
     elif train_config["dataset"] == "openweb":
-        text_dataset = load_dataset("openwebtext", num_proc=4)
+        text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
 
         # MEGABYTE model -> context size = patch_size * patch_num
         if model_config["name"].lower() == "megabyte":

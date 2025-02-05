@@ -53,6 +53,3 @@ class Bigram(nn.Module):
             # Decode
             text = tokenizer.decode([next_token[0].item()])
             print(text, end='', flush=True)
-
-
-

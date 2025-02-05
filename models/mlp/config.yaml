@@ -1,0 +1,6 @@
+name: "mlp"
+
+# Model parameters
+context_size: 16
+d_embed: 256
+d_ff: 1024

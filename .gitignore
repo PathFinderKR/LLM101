@@ -1,5 +1,7 @@
 /.env
 /wandb/
 /models/bigram/checkpoints/
+/models/mlp/checkpoints/
+/models/rnn/checkpoints/
 /models/gpt/checkpoints/
 /models/megabyte/checkpoints/

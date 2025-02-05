@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["bigram", "gpt", "megabyte"],
+        choices=["bigram", "mlp", "gpt", "megabyte"],
         required=True,
         help="Choose the model architecture."
     )

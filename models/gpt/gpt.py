@@ -111,7 +111,7 @@ class GPT(nn.Module):
         self.layer_norm = nn.LayerNorm(config.d_embed)
         self.linear = nn.Linear(config.d_embed, config.vocab_size, bias=False)
 
-    def forward(self, x):  # x=(batch_size, context_size)
+    def forward(self, x):  # x: (batch_size, context_size)
         batch_size, context_size = x.size()
         assert context_size <= self.config.context_size, \
             f"context_size should be less than or equal to {self.config.context_size}"

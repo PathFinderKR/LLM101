@@ -74,7 +74,7 @@ class CasualSelfAttention(nn.Module):
         self.value = nn.Linear(d_embed, d_embed, bias=False)
         self.out = nn.Linear(d_embed, d_embed, bias=False)
 
-    def forward(self, x): # g_x=(batch_size, patch_num, patch_size * d_embed)
+    def forward(self, x):
         batch_size, context_size, _ = x.size()
 
         # Query, Key, Value
@@ -151,21 +151,21 @@ class GlobalModel(nn.Module):
         self.layers = nn.ModuleList([DecoderLayer(patch_size * d_embed, n_head, d_ff, dropout) for _ in range(n_layer)])
         self.layer_norm = nn.LayerNorm(patch_size * d_embed)
 
-    def embed(self, x):  # g_x=(batch_size, patch_num * patch_size)
+    def embed(self, x):  # x: (batch_size, patch_num * patch_size)
         batch_size, context_size = x.size()
         assert context_size <= self.patch_size * self.patch_num, \
             f"context_size should be less than or equal to {self.config.context_size}"
 
         # Embedding
-        token_embed = self.token_embedding(x)  # g_x=(batch_size, patch_num * patch_size, d_embed)
-        pos_idx = torch.arange(context_size, device=x.device)  # g_x=(batch_size, patch_num * patch_size)
-        pos_embed = self.positional_embedding(pos_idx)   # g_x=(batch_size, patch_num * patch_size, d_embed)
+        token_embed = self.token_embedding(x)  # x: (batch_size, patch_num * patch_size, d_embed)
+        pos_idx = torch.arange(context_size, device=x.device)  # x: (batch_size, patch_num * patch_size)
+        pos_embed = self.positional_embedding(pos_idx)   # x: (batch_size, patch_num * patch_size, d_embed)
         return token_embed + pos_embed
 
-    def forward(self, x):  # g_x=(batch_size, patch_num, patch_size * d_embed)
+    def forward(self, x):  # x: (batch_size, patch_num, patch_size * d_embed)
         # Decoder layers
         for layer in self.layers:
-            x = layer(x)  # g_x=(batch_size, patch_num, patch_size * d_embed)
+            x = layer(x)  # x: (batch_size, patch_num, patch_size * d_embed)
 
         # Output
         x = self.layer_norm(x)
@@ -183,25 +183,25 @@ class LocalModel(nn.Module):
         self.layer_norm = nn.LayerNorm(d_embed)
         self.linear = nn.Linear(d_embed, vocab_size, bias=False)
 
-    def embed(self, x):  # l_x=(batch_size * patch_num, patch_size)
+    def embed(self, x):  # x: (batch_size * patch_num, patch_size)
         batch_size, context_size = x.size()
         assert context_size <= self.patch_size, \
             f"context_size should be less than or equal to {self.config.context_size}"
 
         # Embedding
-        token_embed = self.token_embedding(x)  # l_x=(batch_size * patch_num, patch_size, d_embed)
-        pos_idx = torch.arange(context_size, device=x.device)  # l_x=(batch_size * patch_num, patch_size)
-        pos_embed = self.positional_embedding(pos_idx)  # l_x=(batch_size * patch_num, patch_size, d_embed)
+        token_embed = self.token_embedding(x)  # x: (batch_size * patch_num, patch_size, d_embed)
+        pos_idx = torch.arange(context_size, device=x.device)  # x: (batch_size * patch_num, patch_size)
+        pos_embed = self.positional_embedding(pos_idx)  # x: (batch_size * patch_num, patch_size, d_embed)
         return token_embed + pos_embed
 
-    def forward(self, x):  # l_x=(batch_size * patch_num, patch_size, d_embed)
+    def forward(self, x):  # x: (batch_size * patch_num, patch_size, d_embed)
         # Decoder layers
         for layer in self.layers:
-            x = layer(x)  # l_x=(batch_size * patch_num, patch_size, d_embed)
+            x = layer(x)  # x: (batch_size * patch_num, patch_size, d_embed)
 
         # Output
         x = self.layer_norm(x)
-        x = self.linear(x)  # l_x=(batch_size * patch_num, patch_size, vocab_size)
+        x = self.linear(x)  # x: (batch_size * patch_num, patch_size, vocab_size)
         return x
 
 
@@ -236,13 +236,13 @@ class MEGABYTE(nn.Module):
         """
         # Global
         paddig_global = bytes.new(bytes.shape[0], self.config.patch_size).fill_(self.config.pad_id)  # (batch_size, patch_size)
-        # bytes[:, :-self.patch_size] = (batch_size, (patch_num -1) * patch_size)
+        # bytes[:, :-self.patch_size]: (batch_size, (patch_num -1) * patch_size)
         bytes_global = torch.cat((paddig_global, bytes[:, :-self.config.patch_size]), -1)  # (batch_size, patch_num * patch_size)
 
         # Local
         bytes_input = rearrange(bytes, "b (t p) -> (b t) p", p=self.config.patch_size)  # (batch_size * patch_num, patch_size)
         paddig_local = bytes_input.new(bytes_input.shape[0], 1).fill_(self.config.pad_id)  # (batch_size * patch_num, 1)
-        # bytes_input[:, :-1] = (batch_size * patch_num, patch_size - 1)
+        # bytes_input[:, :-1]: (batch_size * patch_num, patch_size - 1)
         bytes_local = torch.cat((paddig_local, bytes_input[:, :-1]), -1)  # (batch_size * patch_num, patch_size)
 
         return bytes_global, bytes_local
