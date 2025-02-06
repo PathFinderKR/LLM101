@@ -168,4 +168,4 @@ If you find this repository useful in your research, please cite the following p
 
 
 ## 🙌 Acknowledgements
-Special thanks to
+Special thanks to Andrej Karpathy, 
