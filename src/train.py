@@ -275,12 +275,12 @@ def setup_scheduler(optimizer: Optimizer, scheduler_type: str, warmup_ratio: flo
     return scheduler
 
 
-def split_text(data: str, val_size: float) -> Tuple[str, str]:
+def split_text(text: str, val_size: float) -> Tuple[str, str]:
     """
     Split text into training and validation sets.
 
     Args:
-        data (str): The data to split.
+        text (str): The data to split.
         val_size (float): Size of the validation set.
 
     Returns:
@@ -289,8 +289,9 @@ def split_text(data: str, val_size: float) -> Tuple[str, str]:
     if val_size <= 0 or val_size >= 1:
         raise ValueError(f"Invalid validation size: {val_size}")
 
-    split_idx = int(len(data) * (1 - val_size))
-    return data[:split_idx], data[split_idx:]
+    split_idx = int(len(text) * (1 - val_size))
+    train_text, val_text = text[:split_idx], text[split_idx:]
+    return train_text, val_text
 
 
 class TextDataset(Dataset):
@@ -338,44 +339,6 @@ def init_dataloader(text: str, tokenizer: CharTokenizer | BPETokenizer, batch_si
 
     print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
     return train_loader, val_loader
-
-def preprocess_dataset(dataset: Dataset, tokenizer: CharTokenizer | BPETokenizer, batch_size: int, context_size: int, val_size: float, seed: int) \
-        -> Tuple[Dataset, Dataset]:
-    """
-    Preprocess the dataset and return the DataLoader.
-
-    Args:
-        dataset (Dataset): The dataset to preprocess.
-        tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
-        batch_size (int): Batch size for the DataLoaders.
-        context_size (int): Context size for the model.
-        val_size (float): Size of the validation set.
-
-    Returns:
-        Tuple[Dataset, Dataset]: Training and validation DataLoaders.
-    """
-    if batch_size != 2 ** int(math.log2(batch_size)):
-        import warnings
-        warnings.warn("Batch size is not the power of 2, which may cause performance issues.")
-
-    # Train-Validation split
-    dataset = dataset["train"].train_test_split(test_size=0.0005, seed=seed, shuffle=True)
-    dataset["val"] = dataset.pop("test")
-
-    train_dataset = dataset["train"].map(
-        lambda x: TextDataset(x, tokenizer, context_size),
-        batched=True,
-        batch_size=batch_size,
-        num_proc=4
-    )
-    val_dataset = dataset["val"].map(
-        lambda x: TextDataset(x, tokenizer, context_size),
-        batched=True,
-        batch_size=batch_size,
-        num_proc=4
-    )
-
-    return train_dataset, val_dataset
 
 
 def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, current_epoch: int, total_epochs: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
@@ -574,19 +537,19 @@ def main():
             train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["context_size"], train_config["val_size"])
 
     # For OpenWebText dataset, use Hugging Face Datasets
-    # To-do:
+# To-do
     elif train_config["dataset"] == "openweb":
         text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
 
         # MEGABYTE model -> context size = patch_size * patch_num
         if model_config["name"].lower() == "megabyte":
-            train_loader, val_loader = preprocess_dataset(text_dataset, tokenizer, train_config["batch_size"], model_config["patch_size"] * model_config["patch_num"], train_config["val_size"], train_config["seed"])
+            train_loader, val_loader = None, None
         else:
-            train_loader, val_loader = preprocess_dataset(text_dataset, tokenizer, train_config["batch_size"], model_config["context_size"], train_config["val_size"], train_config["seed"])
+            train_loader, val_loader = None, None
     else:
         raise ValueError(f"Unsupported dataset: {train_config['dataset']}")
 
-    # To-do: Resume training from a checkpoint
+# To-do: Resume training from a checkpoint
 
     # Train the model
     try:
