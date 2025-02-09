@@ -537,7 +537,7 @@ def main():
             train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["context_size"], train_config["val_size"])
 
     # For OpenWebText dataset, use Hugging Face Datasets
-# To-do
+# TODO: Implement OpenWebText dataset
     elif train_config["dataset"] == "openweb":
         #text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
 
@@ -549,7 +549,7 @@ def main():
     else:
         raise ValueError(f"Unsupported dataset: {train_config['dataset']}")
 
-# To-do: Resume training from a checkpoint
+# TODO: Resume training from a checkpoint
 
     # Train the model
     try:
