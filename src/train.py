@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
 from torch.nn.utils import clip_grad_norm_
-from datasets import load_dataset
+#from datasets import load_dataset
 import wandb
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.utils import set_seed, configure_device, load_text, load_config, save_checkpoint, load_checkpoint
@@ -529,7 +529,7 @@ def main():
     # Load and preprocess the text data
     # For Shakespeare dataset, use PyTorch DataLoader
     if train_config["dataset"] == "shakespeare":
-        text = load_text(root_dir + "data/raw/shakespeare.txt")
+        text = load_text(root_dir + "data/shakespeare.txt")
         # MEGABYTE model -> context size = patch_size * patch_num
         if model_config["name"].lower() == "megabyte":
             train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["patch_size"] * model_config["patch_num"], train_config["val_size"])
@@ -539,7 +539,7 @@ def main():
     # For OpenWebText dataset, use Hugging Face Datasets
 # To-do
     elif train_config["dataset"] == "openweb":
-        text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
+        #text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
 
         # MEGABYTE model -> context size = patch_size * patch_num
         if model_config["name"].lower() == "megabyte":

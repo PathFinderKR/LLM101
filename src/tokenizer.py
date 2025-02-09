@@ -152,7 +152,7 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Build a vocabulary for the tokenizer.")
 
-    default_text_file = "/data/raw/shakespeare.txt"
+    default_text_file = "/data/shakespeare.txt"
 
     parser.add_argument(
         "--type",
