@@ -398,12 +398,12 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
         device (torch.device): Device to run the model on.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
-    model.train()
     running_loss = 0.0
     step = 1
     progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
 
     while step <= max_steps:
+        model.train()
         for batch_idx, (inputs, targets) in progress_bar:
             inputs, targets = inputs.to(device), targets.to(device)
             optimizer.zero_grad()
