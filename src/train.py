@@ -402,7 +402,7 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
     step = 1
     progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
 
-    while step <= max_steps:
+    for step in range(1, max_steps + 1):
         model.train()
         for batch_idx, (inputs, targets) in progress_bar:
             inputs, targets = inputs.to(device), targets.to(device)
