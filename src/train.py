@@ -399,7 +399,6 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
     running_loss = 0.0
-    step = 1
     progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
 
     for step in range(1, max_steps + 1):

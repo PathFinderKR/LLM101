@@ -114,7 +114,7 @@ class GPT(nn.Module):
     def forward(self, x):  # x: (batch_size, context_size)
         batch_size, context_size = x.size()
         assert context_size <= self.config.context_size, \
-            f"context_size should be less than or equal to {self.config.context_size}"
+            f"context_size should be less than or equal to {self.config.context_size}, but got {context_size}"
 
         # Embedding
         token_embed = self.token_embedding(x)  # (batch_size, context_size, d_embed)
