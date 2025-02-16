@@ -413,7 +413,7 @@ def main():
     # Load and preprocess the text data
     # For Shakespeare dataset, use PyTorch DataLoader
     if train_config["dataset"] == "shakespeare":
-        text = load_text(root_dir + "data/shakespeare.txt")
+        text = load_text(file_path=root_dir+"data/shakespeare.txt")
         train_text, val_text = split_text(text=text, val_size=train_config["val_size"])
         if args.model == "megabyte":
             # MEGABYTE model -> context size = patch_size * patch_num
@@ -438,6 +438,7 @@ def main():
             train_loader, val_loader = None, None
     else:
         raise ValueError(f"Unsupported dataset: {train_config['dataset']}")
+
 
     # TODO: Resume training from a checkpoint
 

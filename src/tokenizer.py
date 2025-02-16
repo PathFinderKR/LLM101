@@ -152,7 +152,7 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Build a vocabulary for the tokenizer.")
 
-    default_text_file = "/data/shakespeare.txt"
+    default_file_path = "/data/shakespeare.txt"
 
     parser.add_argument(
         "--type",
@@ -162,10 +162,10 @@ def parse_args():
         help="The type of tokenizer to use. ('char' or 'bpe')"
     )
     parser.add_argument(
-        "--text_file",
+        "--file_path",
         type=str,
-        default=default_text_file,
-        help=f"Path to the text file to build the vocabulary from. Default: {default_text_file}"
+        default=default_file_path,
+        help=f"Path to the text file to build the vocabulary from. Default: {default_file_path}"
     )
     return parser.parse_args()
 
@@ -173,9 +173,16 @@ def parse_args():
 def main():
     args = parse_args()
 
-    root_dir = os.path.dirname(os.path.abspath(__file__)) + "/../"
-    text = load_text(root_dir + args.text_file)
 
+    # Root directory
+    root_dir = os.path.dirname(os.path.abspath(__file__)) + "/../"
+
+
+    # Load the text data
+    text = load_text(file_path=root_dir+args.file_path)
+
+
+    # Initialize the tokenizer
     if args.type == "char":
         tokenizer = CharTokenizer()
     elif args.type == "bpe":
@@ -183,8 +190,10 @@ def main():
     else:
         raise ValueError("Invalid tokenizer type. Choose 'char' or 'bpe'.")
 
-    tokenizer.build_vocab(text)
-    tokenizer.save_vocab(root_dir + f"{args.type}_vocab.json", args.type)
+
+    # Build and save the vocabulary
+    tokenizer.build_vocab(text=text)
+    tokenizer.save_vocab(file_path=root_dir+f"{args.type}_vocab.json", type=args.type)
 
 
 if __name__ == "__main__":

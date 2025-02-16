@@ -132,17 +132,22 @@ def dataset_size_experiment():
 def main():
     args = parse_args()
 
+
     # Root directory
     root_dir = os.path.dirname(os.path.abspath(__file__)) + "/../"
+
 
     # Load the configuration
     scaling_config = load_config(root_dir + "config/scaling_laws.yaml")
 
+
     # Set the seed for reproducibility
     set_seed(scaling_config["seed"])
 
+
     # Configure the device
     device = configure_device()
+
 
     # Initialize wandb
     if not args.debug:
@@ -162,8 +167,10 @@ def main():
         wandb_run = None
         print("Debug mode enabled")
 
+
     # Initialize the tokenizer
     tokenizer = initialize_tokenizer(root_dir + args.vocab_file)
+
 
     # Load and preprocess the text data
     text = load_text(root_dir + "data/shakespeare.txt")
