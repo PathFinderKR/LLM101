@@ -1,6 +1,5 @@
 # Model
-name: "gpt"
-size:
+model_size:
   small:
     context_size: 256
     n_layer: 2
@@ -35,6 +34,7 @@ size:
     flash_attention: False
 
 # Training
+dataset_size: 0.01, 0.05, 0.1, 0.5, 1.0
 epochs: 1
 batch_size: 64
 optimizer:

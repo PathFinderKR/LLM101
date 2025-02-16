@@ -309,7 +309,7 @@ def main():
 
 
     # Load the configuration
-    train_config = load_config(file_path=root_dir+"config/train.yaml")
+    train_config = load_config(file_path=root_dir+"configs/train.yaml")
     model_config = load_config(file_path=root_dir+f"models/{args.model}/config.yaml")
 
 
@@ -349,7 +349,6 @@ def main():
         model = Bigram(BigramConfig(
             vocab_size=tokenizer.vocab_size
         ))
-
     elif args.model == "mlp":
         model = MLP(MLPConfig(
             vocab_size=tokenizer.vocab_size,
@@ -357,7 +356,6 @@ def main():
             d_embed=model_config["d_embed"],
             d_ff=model_config["d_ff"]
         ))
-
     elif args.model == "gpt":
         model = GPT(GPTConfig(
             vocab_size=tokenizer.vocab_size,
@@ -368,7 +366,6 @@ def main():
             d_ff=model_config["d_ff"],
             dropout=model_config["dropout"]
         ))
-
     elif args.model == "megabyte":
         context_size = model_config["context_size"]
         pad_id = model_config["pad_id"]
@@ -479,7 +476,6 @@ def main():
                     device=device,
                     wandb_run=wandb_run
                 )
-
         elif train_config["train_strategy"] == "steps":
             print(f"Training for {train_config['max_steps']} steps")
             scheduler = setup_scheduler(
@@ -500,7 +496,6 @@ def main():
                 device=device,
                 wandb_run=wandb_run
             )
-
         else:
             raise ValueError(f"Unsupported training strategy: {train_config['train_strategy']}")
 
@@ -509,9 +504,11 @@ def main():
     except Exception as e:
         print(f"Error during training: {e}")
 
+
     # Save the model
     if not args.debug:
         save_checkpoint(model=model, file_path=root_dir+f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt")
+
 
     # Finish wandb run
     if wandb_run is not None:

@@ -49,7 +49,7 @@ def main():
 
     # Load the configuration
     generate_config = load_config(file_path=root_dir+"configs/generate.yaml")
-    model_config = load_config(file_path=root_dir+f"configs/{args.model}.yaml")
+    model_config = load_config(file_path=root_dir+f"models/{args.model}/config.yaml")
 
 
     # Set the seed for reproducibility
@@ -69,7 +69,6 @@ def main():
         model = Bigram(BigramConfig(
             vocab_size=tokenizer.vocab_size
         ))
-
     elif args.model == "mlp":
         model = MLP(MLPConfig(
             vocab_size=tokenizer.vocab_size,
@@ -77,7 +76,6 @@ def main():
             d_embed=model_config["d_embed"],
             d_ff=model_config["d_ff"]
         ))
-
     elif args.model == "gpt":
         model = GPT(GPTConfig(
             vocab_size=tokenizer.vocab_size,
@@ -88,7 +86,6 @@ def main():
             d_ff=model_config["d_ff"],
             dropout=model_config["dropout"]
         ))
-
     elif args.model == "megabyte":
         context_size = model_config["context_size"]
         pad_id = model_config["pad_id"]
