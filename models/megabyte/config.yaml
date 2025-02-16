@@ -1,9 +1,9 @@
 name: megabyte
 
 # Model parameters
+context_size: 256
 pad_id: 1  # "<|eot_id|>" token
 patch_size: 4
-patch_num: 256
 global:
   n_layer: 3
   n_head: 4

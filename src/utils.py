@@ -4,6 +4,7 @@ import os
 import random
 import numpy as np
 import yaml
+from typing import Tuple
 import torch
 import torch.nn as nn
 
@@ -67,6 +68,25 @@ def load_text(file_path: str, encoding: str = 'utf-8') -> str:
     return text
 
 
+def split_text(text: str, val_size: float) -> Tuple[str, str]:
+    """
+    Split text into training and validation sets.
+
+    Args:
+        text (str): The data to split.
+        val_size (float): Size of the validation set.
+
+    Returns:
+        Tuple[str, str]: Training and validation data.
+    """
+    if val_size <= 0 or val_size >= 1:
+        raise ValueError(f"Invalid validation size: {val_size}")
+
+    split_idx = int(len(text) * (1 - val_size))
+    train_text, val_text = text[:split_idx], text[split_idx:]
+    return train_text, val_text
+
+
 def load_config(file_path: str) -> dict:
     """
     Load YAML configuration file.
@@ -88,18 +108,18 @@ def load_config(file_path: str) -> dict:
     return config
 
 
-def save_checkpoint(model: nn.Module, model_path: str):
+def save_checkpoint(model: nn.Module, file_path: str):
     """
     Save the model checkpoint.
 
     Args:
         model (nn.Module): The model to save.
-        model_path (str): Path to save the model.
+        file_path (str): Path to save the model.
     """
-    if not os.path.exists(os.path.dirname(model_path)):
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
+    if not os.path.exists(os.path.dirname(file_path)):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    torch.save(model.state_dict(), file_path)
+    print(f"Model saved to {file_path}")
 
 
 def load_checkpoint():

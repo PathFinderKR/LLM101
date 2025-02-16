@@ -16,7 +16,7 @@ from torch.nn.utils import clip_grad_norm_
 #from datasets import load_dataset
 import wandb
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from src.utils import set_seed, configure_device, load_text, load_config, save_checkpoint, load_checkpoint
+from src.utils import set_seed, configure_device, load_text, split_text, load_config, save_checkpoint, load_checkpoint
 from src.tokenizer import CharTokenizer, BPETokenizer
 from models.bigram.bigram import Bigram, BigramConfig
 from models.mlp.mlp import MLP, MLPConfig
@@ -31,7 +31,7 @@ def parse_args():
     Returns:
         argparse.Namespace: Command-line arguments.
     """
-    default_vocab_file = "char_vocab.json"
+    default_file_path = "char_vocab.json"
 
     parser = argparse.ArgumentParser(description="Train a language model.")
     parser.add_argument(
@@ -42,10 +42,10 @@ def parse_args():
         help="Choose the model architecture."
     )
     parser.add_argument(
-        "--vocab_file",
+        "--file_path",
         type=str,
-        default=default_vocab_file,
-        help=f"Path to the vocabulary JSON file. Default: {default_vocab_file}"
+        default=default_file_path,
+        help=f"Path to the vocabulary JSON file. Default: {default_file_path}"
     )
     parser.add_argument(
         "--resume",
@@ -61,50 +61,36 @@ def parse_args():
     return parser.parse_args()
 
 
-def init_wandb(args: argparse.Namespace, train_config: dict, model_config: dict, wandb_path: str) -> wandb.sdk.wandb_run.Run:
-    """
-    Initialize wandb.
+class TextDataset(Dataset):
+    def __init__(self, text: str, tokenizer: CharTokenizer | BPETokenizer, context_size: int):
+        self.text = text
+        self.tokenizer = tokenizer
+        self.context_size = context_size
 
-    Args:
-        args (argparse.Namespace): Command-line arguments.
-        train_config (dict): Training configuration.
-        model_config (dict): Model configuration.
-        wandb_path (str): Path to the wandb directory.
+    def __len__(self) -> int:
+        return len(self.tokenizer.encode(self.text)) - self.context_size
 
-    Returns:
-        wandb.sdk.wandb_run.Run: Wandb run for logging.
-    """
-    wandb.login(key=os.environ.get("WANDB_API_KEY"),)
-    wandb_run = wandb.init(
-        project=train_config["project"],
-        config={
-            "train_config": train_config,
-            "model_config": model_config,
-            "vocab_file": args.vocab_file,
-            "resume": args.resume
-        },
-        resume=args.resume is not None,
-        dir=wandb_path
-    )
-    print(f"Wandb run initialized: {wandb_run.id}")
-    return wandb_run
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        input_ids = self.tokenizer.encode(self.text[idx:idx + self.context_size])
+        target_ids = self.tokenizer.encode(self.text[idx + 1:idx + self.context_size + 1])
+        return input_ids, target_ids
 
 
-def init_tokenizer(vocab_file: str) -> CharTokenizer | BPETokenizer:
+def initialize_tokenizer(file_path: str) -> CharTokenizer | BPETokenizer:
     """
     Initialize the tokenizer based on the vocabulary file.
 
     Args:
-        vocab_file (str): Path to the vocabulary JSON file.
+        file_path (str): Path to the vocabulary JSON file.
 
     Returns:
         CharTokenizer | BPETokenizer: An instance of the tokenizer.
     """
-    if not os.path.isfile(vocab_file):
-        print(f"Vocabulary file not found: {vocab_file}")
-        raise FileNotFoundError(f"Vocabulary file not found: {vocab_file}")
+    if not os.path.isfile(file_path):
+        print(f"Vocabulary file not found: {file_path}")
+        raise FileNotFoundError(f"Vocabulary file not found: {file_path}")
 
-    with open(vocab_file, 'r', encoding='utf-8') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         vocab = json.load(f)
 
     if "<|UNK|>" in vocab:
@@ -114,90 +100,6 @@ def init_tokenizer(vocab_file: str) -> CharTokenizer | BPETokenizer:
 
     print(f"Tokenizer '{tokenizer.tokenizer_type}' initialized with vocab size: {tokenizer.vocab_size}")
     return tokenizer
-
-
-def init_model(model_config: dict, tokenizer: CharTokenizer | BPETokenizer, device: torch.device) -> nn.Module:
-    """
-    Initialize the model based on the model configuration.
-
-    Args:
-        model_config (dict): Model configuration.
-        tokenizer(CharTokenizer | BPETokenizer): Tokenizer instance.
-        device (torch.device): Device to run the model on.
-
-    Returns:
-        model: The initialized model.
-    """
-    model_arch = model_config["name"].lower()
-
-    if model_arch == "bigram":
-        model = Bigram(BigramConfig(
-            vocab_size=tokenizer.vocab_size
-        ))
-
-    elif model_arch == "mlp":
-        model = MLP(MLPConfig(
-            vocab_size=tokenizer.vocab_size,
-            context_size=model_config["context_size"],
-            d_embed=model_config["d_embed"],
-            d_ff=model_config["d_ff"]
-        ))
-
-    elif model_arch == "gpt":
-        required_keys = ["context_size", "n_layer", "n_head", "d_embed", "d_ff", "dropout"]
-        for key in required_keys:
-            if key not in model_config:
-                raise ValueError(f"Missing configuration for the {model_arch} model: {key}")
-
-        model = GPT(GPTConfig(
-            vocab_size=tokenizer.vocab_size,
-            context_size=model_config["context_size"],
-            n_layer=model_config["n_layer"],
-            n_head=model_config["n_head"],
-            d_embed=model_config["d_embed"],
-            d_ff=model_config["d_ff"],
-            dropout=model_config["dropout"]
-        ))
-
-    elif model_arch == "megabyte":
-        required_keys = ["pad_id", "patch_size", "global", "local"]
-        for key in required_keys:
-            if key not in model_config:
-                raise ValueError(f"Missing configuration for the {model_arch} model: {key}")
-
-        model = MEGABYTE(MegabyteConfig(
-            vocab_size=tokenizer.vocab_size,
-            pad_id=model_config["pad_id"],
-            patch_size=model_config["patch_size"],
-            patch_num=model_config["patch_num"],
-            global_config=GPTConfig(
-                vocab_size=tokenizer.vocab_size,
-                context_size=model_config["patch_size"] * model_config["patch_num"],
-                n_layer=model_config["global"]["n_layer"],
-                n_head=model_config["global"]["n_head"],
-                d_embed=model_config["global"]["d_embed"],
-                d_ff=model_config["global"]["d_ff"],
-                dropout=model_config["global"]["dropout"]
-            ),
-            local_config=GPTConfig(
-                vocab_size=tokenizer.vocab_size,
-                context_size=model_config["patch_size"],
-                n_layer=model_config["local"]["n_layer"],
-                n_head=model_config["local"]["n_head"],
-                d_embed=model_config["local"]["d_embed"],
-                d_ff=model_config["local"]["d_ff"],
-                dropout=model_config["local"]["dropout"]
-            )
-        ))
-    else:
-        raise ValueError(f"Unsupported model type: {model_arch}")
-
-    # Move the model to the device
-    model.to(device)
-
-    print(f"Model '{model_arch}' initialized."
-          f" Number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-    return model
 
 
 def setup_optimizer(model: nn.Module, optimizer_name: str, lr: float, weight_decay: float) -> Optimizer:
@@ -275,72 +177,6 @@ def setup_scheduler(optimizer: Optimizer, scheduler_type: str, warmup_ratio: flo
     return scheduler
 
 
-def split_text(text: str, val_size: float) -> Tuple[str, str]:
-    """
-    Split text into training and validation sets.
-
-    Args:
-        text (str): The data to split.
-        val_size (float): Size of the validation set.
-
-    Returns:
-        Tuple[str, str]: Training and validation data.
-    """
-    if val_size <= 0 or val_size >= 1:
-        raise ValueError(f"Invalid validation size: {val_size}")
-
-    split_idx = int(len(text) * (1 - val_size))
-    train_text, val_text = text[:split_idx], text[split_idx:]
-    return train_text, val_text
-
-
-class TextDataset(Dataset):
-    def __init__(self, text: str, tokenizer: CharTokenizer | BPETokenizer, context_size: int):
-        self.text = text
-        self.tokenizer = tokenizer
-        self.context_size = context_size
-
-    def __len__(self) -> int:
-        return len(self.tokenizer.encode(self.text)) - self.context_size
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        input_ids = self.tokenizer.encode(self.text[idx:idx + self.context_size])
-        target_ids = self.tokenizer.encode(self.text[idx + 1:idx + self.context_size + 1])
-        return input_ids, target_ids
-
-
-def init_dataloader(text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int, context_size: int, val_size: float) \
-        -> Tuple[DataLoader, DataLoader]:
-    """
-    Initialize the training and validation DataLoaders.
-
-    Args:
-        text (str): The text data.
-        tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
-        batch_size (int): Batch size for the DataLoaders.
-        context_size (int): Context size for the model.
-        val_size (float): Size of the validation set.
-
-    Returns:
-        Tuple[DataLoader, DataLoader]: Training and validation DataLoaders.
-    """
-    if batch_size != 2 ** int(math.log2(batch_size)):
-        import warnings
-        warnings.warn("Batch size is not the power of 2, which may cause performance issues.")
-
-    # Train-Validation split
-    train_text, val_text = split_text(text, val_size)
-
-    train_dataset = TextDataset(train_text, tokenizer, context_size)
-    val_dataset = TextDataset(val_text, tokenizer, context_size)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-
-    print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
-    return train_loader, val_loader
-
-
 def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, current_epoch: int, total_epochs: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
     """
     Train the model for one epoch.
@@ -404,7 +240,6 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
     for step, (inputs, targets) in progress_bar:
         if step > max_steps:
             break
-
         model.train()
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
@@ -465,93 +300,209 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wan
     print(f"Validation Loss: {avg_loss:.4f}, Perplexity: {perplexity:.4f}")
 
 
-def train(model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, train_config: dict, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
-    """
-    Train the model.
-
-    Args:
-        model (nn.Module): The model to train.
-        train_loader (DataLoader): DataLoader for the training data.
-        val_loader (DataLoader): DataLoader for the validation data.
-        train_config (dict): Training configuration.
-        device (torch.device): Device to run the model on.
-        wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
-    """
-    optimizer = setup_optimizer(model, train_config["optimizer"]["name"], train_config["optimizer"]["params"]["lr"], train_config["optimizer"]["params"]["weight_decay"])
-
-    if train_config["train_strategy"] == "epochs":
-        print(f"Training for {train_config['epochs']} epochs")
-        scheduler = setup_scheduler(optimizer, train_config["scheduler"]["type"], train_config["scheduler"]["warmup_ratio"], len(train_loader) * train_config["epochs"])
-        for epoch in range(train_config["epochs"]):
-            train_epoch(model, train_loader, optimizer, scheduler, epoch, train_config["epochs"], train_config["grad_clip"], device, wandb_run)
-            evaluate(model, val_loader, device, wandb_run)
-
-    elif train_config["train_strategy"] == "steps":
-        print(f"Training for {train_config['max_steps']} steps")
-        scheduler = setup_scheduler(optimizer, train_config["scheduler"]["type"], train_config["scheduler"]["warmup_ratio"], train_config["max_steps"])
-        train_steps(model, train_loader, val_loader, optimizer, scheduler, train_config["max_steps"], train_config["val_interval"], train_config["grad_clip"], device, wandb_run)
-
-    else:
-        raise ValueError(f"Unsupported training strategy: {train_config['train_strategy']}")
-
-    print("Training completed successfully!!")
-
-
 def main():
     args = parse_args()
+
 
     # Root directory
     root_dir = os.path.dirname(os.path.abspath(__file__)) + "/../"
 
+
     # Load the configuration
-    train_config = load_config(root_dir + "configs/train.yaml")
-    model_config = load_config(root_dir + f"models/{args.model}/config.yaml")
+    train_config = load_config(file_path=root_dir+"config/train.yaml")
+    model_config = load_config(file_path=root_dir+f"models/{args.model}/config.yaml")
+
 
     # Set the seed for reproducibility
-    set_seed(train_config["seed"])
+    set_seed(seed=train_config["seed"])
+
 
     # Configure the device
     device = configure_device()
 
+
     # Initialize wandb
     if not args.debug:
-        wandb_run = init_wandb(args, train_config, model_config, root_dir)
+        wandb.login(key=os.environ.get("WANDB_API_KEY"))
+        wandb_run = wandb.init(
+            project=train_config["project"],
+            config={
+                "train_config": train_config,
+                "model_config": model_config,
+                "resume": args.resume
+            },
+            resume=args.resume is not None,
+            dir=root_dir
+        )
+        print(f"Wandb run initialized: {wandb_run.id}")
     else:
         wandb_run = None
         print("Debug mode enabled")
 
-    # Initialize the tokenizer and the model
-    tokenizer = init_tokenizer(root_dir + args.vocab_file)
-    model = init_model(model_config, tokenizer, device)
+
+    # Initialize the tokenizer
+    tokenizer = initialize_tokenizer(file_path=root_dir+args.file_path)
+
+
+    # Initialize the model
+    if args.model == "bigram":
+        model = Bigram(BigramConfig(
+            vocab_size=tokenizer.vocab_size
+        ))
+
+    elif args.model == "mlp":
+        model = MLP(MLPConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=model_config["context_size"],
+            d_embed=model_config["d_embed"],
+            d_ff=model_config["d_ff"]
+        ))
+
+    elif args.model == "gpt":
+        model = GPT(GPTConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=model_config["context_size"],
+            n_layer=model_config["n_layer"],
+            n_head=model_config["n_head"],
+            d_embed=model_config["d_embed"],
+            d_ff=model_config["d_ff"],
+            dropout=model_config["dropout"]
+        ))
+
+    elif args.model == "megabyte":
+        context_size = model_config["context_size"]
+        pad_id = model_config["pad_id"]
+        patch_size = model_config["patch_size"]
+        # Global transformer configuration
+        global_config = GPTConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=context_size,
+            n_layer=model_config["global_n_layer"],
+            n_head=model_config["global_n_head"],
+            d_embed=model_config["global_d_embed"],
+            d_ff=model_config["global_d_ff"],
+            dropout=model_config["global_dropout"]
+        )
+        # Local transformer configuration
+        local_config = GPTConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=patch_size,
+            n_layer=model_config["local_n_layer"],
+            n_head=model_config["local_n_head"],
+            d_embed=model_config["local_d_embed"],
+            d_ff=model_config["local_d_ff"],
+            dropout=model_config["local_dropout"]
+        )
+        model = MEGABYTE(MegabyteConfig(
+            vocab_size=tokenizer.vocab_size,
+            pad_id=pad_id,
+            patch_size=patch_size,
+            patch_num=context_size // patch_size,
+            global_config=global_config,
+            local_config=local_config
+        ))
+    else:
+        raise ValueError(f"Unsupported model type: {args.model}")
+
+    model.to(device)
+    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    wandb_run.log({"Number of Parameters": num_params})
+    print(f"Model '{args.model}' initialized. Number of Parameters: {num_params}")
+
 
     # Load and preprocess the text data
     # For Shakespeare dataset, use PyTorch DataLoader
     if train_config["dataset"] == "shakespeare":
         text = load_text(root_dir + "data/shakespeare.txt")
-        # MEGABYTE model -> context size = patch_size * patch_num
-        if model_config["name"].lower() == "megabyte":
-            train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["patch_size"] * model_config["patch_num"], train_config["val_size"])
+        train_text, val_text = split_text(text=text, val_size=train_config["val_size"])
+        if args.model == "megabyte":
+            # MEGABYTE model -> context size = patch_size * patch_num
+            train_dataset = TextDataset(text=train_text, tokenizer=tokenizer, context_size=model_config["patch_size"]*model_config["patch_num"])
+            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["patch_size"]*model_config["patch_num"])
+            train_loader = DataLoader(train_dataset, batch_size=train_config["batch_size"], shuffle=True, num_workers=4)
+            val_loader = DataLoader(val_dataset, batch_size=train_config["batch_size"], shuffle=False, num_workers=4)
         else:
-            train_loader, val_loader = init_dataloader(text, tokenizer, train_config["batch_size"], model_config["context_size"], train_config["val_size"])
+            train_dataset = TextDataset(text=train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+            train_loader = DataLoader(train_dataset, batch_size=train_config["batch_size"], shuffle=True, num_workers=4)
+            val_loader = DataLoader(val_dataset, batch_size=train_config["batch_size"], shuffle=False, num_workers=4)
 
     # For OpenWebText dataset, use Hugging Face Datasets
-# TODO: Implement OpenWebText dataset
+    # TODO: Implement OpenWebText dataset
     elif train_config["dataset"] == "openweb":
         #text_dataset = load_dataset("openwebtext", num_proc=4, trust_remote_code=True)
-
-        # MEGABYTE model -> context size = patch_size * patch_num
-        if model_config["name"].lower() == "megabyte":
+        if args.model == "megabyte":
+            # MEGABYTE model -> context size = patch_size * patch_num
             train_loader, val_loader = None, None
         else:
             train_loader, val_loader = None, None
     else:
         raise ValueError(f"Unsupported dataset: {train_config['dataset']}")
 
-# TODO: Resume training from a checkpoint
+    # TODO: Resume training from a checkpoint
+
+
+    # Initialize the optimizer
+    optimizer = setup_optimizer(
+        model=model,
+        optimizer_name=train_config["optimizer"]["name"],
+        lr=train_config["optimizer"]["params"]["lr"],
+        weight_decay=train_config["optimizer"]["params"]["weight_decay"]
+    )
 
     # Train the model
     try:
-        train(model, train_loader, val_loader, train_config, device, wandb_run)
+        if train_config["train_strategy"] == "epochs":
+            print(f"Training for {train_config['epochs']} epochs")
+            scheduler = setup_scheduler(
+                optimizer=optimizer,
+                scheduler_type=train_config["scheduler"]["type"],
+                warmup_ratio=train_config["scheduler"]["warmup_ratio"],
+                total_steps=len(train_loader) * train_config["epochs"]
+            )
+            for epoch in range(train_config["epochs"]):
+                train_epoch(
+                    model=model,
+                    dataloader=train_loader,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    current_epoch=epoch,
+                    total_epochs=train_config["epochs"],
+                    grad_clip=train_config["grad_clip"],
+                    device=device,
+                    wandb_run=wandb_run
+                )
+                evaluate(
+                    model=model,
+                    dataloader=val_loader,
+                    device=device,
+                    wandb_run=wandb_run
+                )
+
+        elif train_config["train_strategy"] == "steps":
+            print(f"Training for {train_config['max_steps']} steps")
+            scheduler = setup_scheduler(
+                optimizer=optimizer,
+                scheduler_type=train_config["scheduler"]["type"],
+                warmup_ratio=train_config["scheduler"]["warmup_ratio"],
+                total_steps=train_config["max_steps"]
+            )
+            train_steps(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                max_steps=train_config["max_steps"],
+                val_interval=train_config["val_interval"],
+                grad_clip=train_config["grad_clip"],
+                device=device,
+                wandb_run=wandb_run
+            )
+
+        else:
+            raise ValueError(f"Unsupported training strategy: {train_config['train_strategy']}")
+
     except KeyboardInterrupt:
         print("Training interrupted by the user")
     except Exception as e:
@@ -559,12 +510,10 @@ def main():
 
     # Save the model
     if not args.debug:
-        save_checkpoint(model, root_dir + f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt")
+        save_checkpoint(model=model, file_path=root_dir+f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt")
 
     # Finish wandb run
     if wandb_run is not None:
-        wandb_run.log({"Number of Parameters": sum(p.numel() for p in model.parameters() if p.requires_grad)})
-        wandb_run.save(root_dir + f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt")
         wandb_run.finish()
 
 
