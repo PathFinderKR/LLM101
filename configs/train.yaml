@@ -2,7 +2,7 @@ train_strategy: "steps" # steps or epochs
 epochs: 1
 max_steps: 1000
 val_interval: 500
-batch_size: 64
+batch_size: 32
 optimizer:
   name: AdamW  # AdamW or SGD
   params:

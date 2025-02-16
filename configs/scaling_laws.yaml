@@ -18,18 +18,18 @@ model_size:
     flash_attention: False
   large:
     context_size: 256
-    n_layer: 12
-    n_head: 12
-    d_embed: 768
-    d_ff: 3072
+    n_layer: 6
+    n_head: 8
+    d_embed: 512
+    d_ff: 2048
     dropout: 0.2
     flash_attention: False
   xl:
     context_size: 256
-    n_layer: 24
-    n_head: 24
-    d_embed: 1024
-    d_ff: 4096
+    n_layer: 8
+    n_head: 12
+    d_embed: 768
+    d_ff: 3072
     dropout: 0.2
     flash_attention: False
 
@@ -41,7 +41,7 @@ dataset_size:
   large: 0.5
   xl: 1.0
 epochs: 1  # Fixed
-batch_size: 256
+batch_size: 128  # Fixed
 optimizer:
   name: AdamW  # AdamW or SGD
   params:

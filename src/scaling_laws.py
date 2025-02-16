@@ -60,7 +60,6 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     ax.scatter(x, y, label='Data', alpha=0.7)
 
     # Best fit line in log space
-    # Best fit line in log space
     fit_line_x = np.linspace(x_log.min(), x_log.max(), 100)
     fit_line_y = slope * fit_line_x + intercept
     ax.plot(10 ** fit_line_x, 10 ** fit_line_y, 'r--',
@@ -167,7 +166,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wan
 
 def compute_experiment(
         model_sizes: dict, dataset_sizes: dict,
-        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, project: str, root_dir: str):
     """
@@ -179,7 +178,6 @@ def compute_experiment(
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
-        batch_size (int): Batch size the DataLoaders.
         optimizer_name (str): Name of the optimizer.
         lr (float): Learning rate.
         weight_decay (float): Weight decay.
@@ -207,6 +205,16 @@ def compute_experiment(
             subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
             train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
             val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+            if model_size == "small":
+                batch_size = 512
+            elif model_size == "medium":
+                batch_size = 128
+            elif model_size == "large":
+                batch_size = 64
+            elif model_size == "xl":
+                batch_size = 32
+            else:
+                batch_size = 128
             train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
             print(f"Number of tokens: {len(train_dataset)}")
@@ -380,7 +388,7 @@ def dataset_size_experiment(
 
 def model_size_experiment(
         model_sizes: dict, dataset_size: float,
-        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, project: str, root_dir: str):
     """
@@ -392,7 +400,6 @@ def model_size_experiment(
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
-        batch_size (int): Batch size the DataLoaders.
         optimizer_name (str): Name of the optimizer.
         lr (float): Learning rate.
         weight_decay (float): Weight decay.
@@ -418,6 +425,16 @@ def model_size_experiment(
         subset_train_text = train_text[:int(len(train_text) * dataset_size)]
         train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
         val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+        if model_size == "small":
+            batch_size = 512
+        elif model_size == "medium":
+            batch_size = 128
+        elif model_size == "large":
+            batch_size = 64
+        elif model_size == "xl":
+            batch_size = 32
+        else:
+            batch_size = 128
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
@@ -530,7 +547,6 @@ def main():
             train_text=train_text,
             val_text=val_text,
             tokenizer=tokenizer,
-            batch_size=scaling_config["batch_size"],
             optimizer_name=scaling_config["optimizer"]["name"],
             lr=scaling_config["optimizer"]["params"]["lr"],
             weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
@@ -564,7 +580,6 @@ def main():
             train_text=train_text,
             val_text=val_text,
             tokenizer=tokenizer,
-            batch_size=scaling_config["batch_size"],
             optimizer_name=scaling_config["optimizer"]["name"],
             lr=scaling_config["optimizer"]["params"]["lr"],
             weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
