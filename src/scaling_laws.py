@@ -2,26 +2,19 @@
 
 import os
 import sys
-import json
 import argparse
-import math
-from typing import Tuple
+import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 import torch
 from torch import nn
-from torch.utils.data import Dataset, DataLoader
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
-from torch.nn.utils import clip_grad_norm_
+from torch.utils.data import DataLoader
 import wandb
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from src.utils import set_seed, configure_device, load_text, split_text, load_config, save_checkpoint, load_checkpoint
+from src.utils import set_seed, configure_device, load_text, split_text, load_config
 from src.tokenizer import CharTokenizer, BPETokenizer
-from src.train import TextDataset, initialize_tokenizer, setup_optimizer, setup_scheduler, train_epoch, evaluate
-from models.bigram.bigram import Bigram, BigramConfig
-from models.mlp.mlp import MLP, MLPConfig
+from src.train import TextDataset, initialize_tokenizer, setup_optimizer, setup_scheduler, train_epoch
 from models.gpt.gpt import GPT, GPTConfig
-from models.megabyte.megabyte import MEGABYTE, MegabyteConfig
 
 
 def parse_args():
@@ -33,25 +26,12 @@ def parse_args():
     """
     default_vocab_path = "char_vocab.json"
 
-    parser = argparse.ArgumentParser(description="Train a language model.")
-    parser.add_argument(
-        "--model",
-        type=str,
-        choices=["bigram", "mlp", "gpt", "megabyte"],
-        required=True,
-        help="Choose the model architecture."
-    )
+    parser = argparse.ArgumentParser(description="Scaling Laws for Neural Language Models.")
     parser.add_argument(
         "--vocab_path",
         type=str,
         default=default_vocab_path,
         help=f"Path to the vocabulary JSON file. Default: {default_vocab_path}"
-    )
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default=None,
-        help="Path to the checkpoint file to resume training."
     )
     parser.add_argument(
         "--debug",
@@ -61,97 +41,357 @@ def parse_args():
     return parser.parse_args()
 
 
-def plot_scaling_laws():
-    pass
+def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
+    """
+    Plot the given data in log-log scale and log the figure to wandb.
+    """
+    from scipy.stats import linregress
+    x_log = np.log10(x)
+    y_log = np.log10(y)
 
+    slope, intercept, r_value, p_value, std_err = linregress(x_log, y_log)
 
+    # Best fit line in log space
+    fit_line_x = np.linspace(x_log.min(), x_log.max(), 100)
+    fit_line_y = slope * fit_line_x + intercept
+
+    plt.figure(figsize=(6, 5))
+    plt.scatter(x, y, label='Data', alpha=0.7)
+    plt.plot(10 ** fit_line_x, 10 ** fit_line_y, 'r--',
+             label=f'Fit: y = {10 ** intercept:.2f} * x^{slope:.2f}')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    plt.legend()
+    plt.show()
+
+    # Log the figure to wandb
+    if wandb_run is not None:
+        wandb.log({title: wandb.Image(fig)})
+    plt.close(fig)
+
+def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> float:
+    """
+    Evaluate the model on the validation set.
+
+    Args:
+        model (nn.Module): The model to evaluate.
+        dataloader (DataLoader): DataLoader for the validation data.
+        device (torch.device): Device to run the model on.
+        wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
+
+    Returns:
+        loss (float): The average loss on the validation set.
+    """
+    model.eval()
+    running_loss = 0.0
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
+
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in progress_bar:
+            inputs, targets = inputs.to(device), targets.to(device)
+            logits = model(inputs)
+            loss = model.loss(logits, targets)
+            running_loss += loss.item()
+            progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
+
+    progress_bar.close()
+
+    avg_loss = running_loss / len(dataloader)
+
+    if wandb_run is not None:
+        wandb_run.log({
+            "Validation Loss": avg_loss,
+        })
+
+    print(f"Validation Loss: {avg_loss:.4f}")
+
+    return avg_loss
 
 
 def compute_experiment(
-        model_sizes: list[str], dataset_sizes: list[float],
-        gpt_config: GPTConfig,
-        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
-        batch_size: int, optimizer: Optimizer, scheduler: LambdaLR, current_epoch: int, total_epochs: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+        model_sizes: dict, dataset_sizes: dict,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
+        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
     """
-    Compute the experiment for the scaling laws.
+    Compute vs test loss scaling laws.
 
     Args:
-        model_sizes (list[str]): List of model sizes.
-        dataset_sizes (list[float]): List of dataset sizes.
-        gpt_config (GPTConfig): GPT configuration.
+        model_sizes (dict): Dictionary with the model sizes.
+        dataset_sizes (dict): Dictionary with the dataset sizes.
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
         batch_size (int): Batch size the DataLoaders.
-        optimizer (Optimizer): Optimizer for training.
-        scheduler (LambdaLR): Learning rate scheduler.
-        current_epoch (int): Current epoch.
-        total_epochs (int): Total number of epochs.
+        optimizer_name (str): Name of the optimizer.
+        lr (float): Learning rate.
+        weight_decay (float): Weight decay.
+        scheduler_type (str): Type of the scheduler.
+        warmup_ratio (float): Ratio of the warmup steps.
         grad_clip (float): Gradient clipping value.
         device (torch.device): Device for training.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
+    compute_values = []
+    test_losses = []
+
     for model_size in model_sizes:
         for dataset_size in dataset_sizes:
             # Subset the training data
-            subset_train_text = train_text[:int(len(train_text) * dataset_size)]
-
-            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=gpt_config.context_size)
-            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=gpt_config.context_size)
-
+            subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
+            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
             train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-
             print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
 
             # Initialize the model
-            model = GPT(gpt_config).to(device)
+            model = GPT(GPTConfig(
+                vocab_size=tokenizer.vocab_size,
+                context_size=model_sizes[model_size]["context_size"],
+                n_layer=model_sizes[model_size]["n_layer"],
+                n_head=model_sizes[model_size]["n_head"],
+                d_embed=model_sizes[model_size]["d_embed"],
+                d_ff=model_sizes[model_size]["d_ff"],
+                dropout=model_sizes[model_size]["dropout"]
+            ))
             num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+            # FLOPs
+            flops = 2 * num_params * len(train_dataset)
+
+            # Initialize the optimizer and scheduler
             optimizer = setup_optimizer(
                 model=model,
-                optimizer_name=asd,
+                optimizer_name=optimizer_name,
+                lr=lr,
+                weight_decay=weight_decay
             )
-            scheduler = setup_optimizer(
+            scheduler = setup_scheduler(
                 optimizer=optimizer,
-                scheduler_name="linear",
-                warmup_steps=0,
-                total_steps=len(train_loader) * total_epochs
+                scheduler_type=scheduler_type,
+                warmup_ratio=warmup_ratio,
+                total_steps=len(train_loader) * 1
             )
 
-            for epoch in range(total_epochs):
-                train_epoch(
-                    model=model,
-                    optimizer=optimizer,
-                    scheduler=scheduler,
-                    train_loader=train_loader,
-                    epoch=epoch,
-                    total_epochs=total_epochs,
-                    grad_clip=grad_clip,
-                    device=device,
-                    wandb_run=wandb_run
-                )
-                evaluate(
-                    model=model,
-                    val_loader=val_loader,
-                    epoch=epoch,
-                    total_epochs=total_epochs,
-                    device=device,
-                    wandb_run=wandb_run
-                )
+            # Train the model for one epoch
+            train_epoch(
+                model=model,
+                dataloader=train_loader,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                current_epoch=0,
+                total_epochs=1,
+                grad_clip=grad_clip,
+                device=device,
+                wandb_run=wandb_run
+            )
+            test_loss = evaluate(
+                model=model,
+                dataloader=val_loader,
+                device=device,
+                wandb_run=wandb_run
+            )
+
+            compute_values.append(flops)
+            test_losses.append(test_loss)
+
+    plot_scaling_laws(
+        x=compute_values,
+        y=test_losses,
+        x_label="Compute (FLOPs)",
+        y_label="Test Loss",
+        title="Compute vs Test Loss",
+        wandb_run=wandb_run
+    )
 
 
+def dataset_size_experiment(
+        dataset_sizes: dict, model_size: dict,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
+        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+    """
+    Dataset size vs test loss scaling laws.
+
+    Args:
+        dataset_sizes (dict): Dictionary with the dataset sizes.
+        model_size (dict): Dictionary with the model size.
+        train_text (str): Text data for training.
+        val_text (str): Text data for validation.
+        tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
+        batch_size (int): Batch size the DataLoaders.
+        optimizer_name (str): Name of the optimizer.
+        lr (float): Learning rate.
+        weight_decay (float): Weight decay.
+        scheduler_type (str): Type of the scheduler.
+        warmup_ratio (float): Ratio of the warmup steps.
+        grad_clip (float): Gradient clipping value.
+        device (torch.device): Device for training.
+        wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
+    """
+    dataset_sizes_values = []
+    test_losses = []
+
+    for dataset_size in dataset_sizes:
+        subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
+        train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_size["context_size"])
+        val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_size["context_size"])
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
+
+        # Initialize the model
+        model = GPT(GPTConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=model_size["context_size"],
+            n_layer=model_size["n_layer"],
+            n_head=model_size["n_head"],
+            d_embed=model_size["d_embed"],
+            d_ff=model_size["d_ff"],
+            dropout=model_size["dropout"]
+        ))
+
+        # Initialize the optimizer and scheduler
+        optimizer = setup_optimizer(
+            model=model,
+            optimizer_name=optimizer_name,
+            lr=lr,
+            weight_decay=weight_decay
+        )
+        scheduler = setup_scheduler(
+            optimizer=optimizer,
+            scheduler_type=scheduler_type,
+            warmup_ratio=warmup_ratio,
+            total_steps=len(train_loader) * 1
+        )
+
+        # Train the model for one epoch
+        train_epoch(
+            model=model,
+            dataloader=train_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            current_epoch=0,
+            total_epochs=1,
+            grad_clip=grad_clip,
+            device=device,
+            wandb_run=wandb_run
+        )
+        test_loss = evaluate(
+            model=model,
+            dataloader=val_loader,
+            device=device,
+            wandb_run=wandb_run
+        )
+
+        test_losses.append(test_loss)
+
+    plot_scaling_laws(
+        x=dataset_sizes,
+        y=test_losses,
+        x_label="Dataset Size",
+        y_label="Test Loss",
+        title="Dataset Size vs Test Loss",
+        wandb_run=wandb_run
+    )
 
 
-def dataset_size_experiment():
-    pass
+def model_size_experiment(
+        model_sizes: dict, dataset_size: float,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
+        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run):
+    """
+    Model size vs test loss scaling laws.
+
+    Args:
+        model_sizes (dict): Dictionary with the model sizes.
+        dataset_size (float): Dictionary with the dataset sizes.
+        train_text (str): Text data for training.
+        val_text (str): Text data for validation.
+        tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
+        batch_size (int): Batch size the DataLoaders.
+        optimizer_name (str): Name of the optimizer.
+        lr (float): Learning rate.
+        weight_decay (float): Weight decay.
+        scheduler_type (str): Type of the scheduler.
+        warmup_ratio (float): Ratio of the warmup steps.
+        grad_clip (float): Gradient clipping value.
+        device (torch.device): Device for training.
+        wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
+    """
+    model_sizes_values = []
+    test_losses = []
+
+    for model_size in model_sizes:
+        subset_train_text = train_text[:int(len(train_text) * dataset_size)]
+        train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+        val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+        print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
+
+        # Initialize the model
+        model = GPT(GPTConfig(
+            vocab_size=tokenizer.vocab_size,
+            context_size=model_sizes[model_size]["context_size"],
+            n_layer=model_sizes[model_size]["n_layer"],
+            n_head=model_sizes[model_size]["n_head"],
+            d_embed=model_sizes[model_size]["d_embed"],
+            d_ff=model_sizes[model_size]["d_ff"],
+            dropout=model_sizes[model_size]["dropout"]
+        ))
+        num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+        # Initialize the optimizer and scheduler
+        optimizer = setup_optimizer(
+            model=model,
+            optimizer_name=optimizer_name,
+            lr=lr,
+            weight_decay=weight_decay
+        )
+        scheduler = setup_scheduler(
+            optimizer=optimizer,
+            scheduler_type=scheduler_type,
+            warmup_ratio=warmup_ratio,
+            total_steps=len(train_loader) * 1
+        )
 
-def model_size_experiment():
-    pass
 
+        # Train the model for one epoch
+        train_epoch(
+            model=model,
+            dataloader=train_loader,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            current_epoch=0,
+            total_epochs=1,
+            grad_clip=grad_clip,
+            device=device,
+            wandb_run=wandb_run
+        )
+        test_loss = evaluate(
+            model=model,
+            dataloader=val_loader,
+            device=device,
+            wandb_run=wandb_run
+        )
 
+        test_losses.append(test_loss)
+
+    plot_scaling_laws(
+        x=[model_sizes[model_size]["n_layer"] for model_size in model_sizes],
+        y=test_losses,
+        x_label="Number of Layers",
+        y_label="Test Loss",
+        title="Model Size vs Test Loss",
+        wandb_run=wandb_run
+    )
 
 
 def main():
@@ -164,6 +404,8 @@ def main():
 
     # Load the configuration
     scaling_config = load_config(file_path=root_dir+"configs/scaling_laws.yaml")
+    model_sizes = scaling_config["model_size"]
+    dataset_sizes = scaling_config["dataset_size"]
 
 
     # Set the seed for reproducibility
@@ -203,15 +445,54 @@ def main():
 
     # Run the experiment
     try:
-        model_sizes = scaling_config["model_size"]
-        for model_size in model_sizes:
-
-
-        dataset_sizes = scaling_config["dataset_size"]
         compute_experiment(
             model_sizes=model_sizes,
             dataset_sizes=dataset_sizes,
-
+            train_text=train_text,
+            val_text=val_text,
+            tokenizer=tokenizer,
+            batch_size=scaling_config["batch_size"],
+            optimizer_name=scaling_config["optimizer"],
+            lr=scaling_config["lr"],
+            weight_decay=scaling_config["weight_decay"],
+            scheduler_type=scaling_config["scheduler"],
+            warmup_ratio=scaling_config["warmup_ratio"],
+            grad_clip=scaling_config["grad_clip"],
+            device=device,
+            wandb_run=wandb_run
+        )
+        dataset_size_experiment(
+            dataset_sizes=dataset_sizes,
+            model_size=model_sizes["medium"],
+            train_text=train_text,
+            val_text=val_text,
+            tokenizer=tokenizer,
+            batch_size=scaling_config["batch_size"],
+            optimizer_name=scaling_config["optimizer"],
+            lr=scaling_config["lr"],
+            weight_decay=scaling_config["weight_decay"],
+            scheduler_type=scaling_config["scheduler"],
+            warmup_ratio=scaling_config["warmup_ratio"],
+            grad_clip=scaling_config["grad_clip"],
+            device=device,
+            wandb_run=wandb_run
+        )
+        model_size_experiment(
+            model_sizes=model_sizes,
+            dataset_size=dataset_sizes["medium"],
+            train_text=train_text,
+            val_text=val_text,
+            tokenizer=tokenizer,
+            batch_size=scaling_config["batch_size"],
+            optimizer_name=scaling_config["optimizer"],
+            lr=scaling_config["lr"],
+            weight_decay=scaling_config["weight_decay"],
+            scheduler_type=scaling_config["scheduler"],
+            warmup_ratio=scaling_config["warmup_ratio"],
+            grad_clip=scaling_config["grad_clip"],
+            device=device,
+            wandb_run=wandb_run
+        )
 
     except KeyboardInterrupt:
         print("Training interrupted by the user")
