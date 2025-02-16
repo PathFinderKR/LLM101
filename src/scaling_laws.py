@@ -115,16 +115,13 @@ def compute_experiment(
             model = init_model(model_arch, context_size, d_embed, d_ff, n_layer, n_head, dropout, tokenizer, device)
 
 
-def model_size_experiment():
-    pass
-
-
 def dataset_size_experiment():
     pass
 
 
 
-
+def model_size_experiment():
+    pass
 
 
 
@@ -138,11 +135,11 @@ def main():
 
 
     # Load the configuration
-    scaling_config = load_config(root_dir + "config/scaling_laws.yaml")
+    scaling_config = load_config(file_path=root_dir+"config/scaling_laws.yaml")
 
 
     # Set the seed for reproducibility
-    set_seed(scaling_config["seed"])
+    set_seed(seed=scaling_config["seed"])
 
 
     # Configure the device
@@ -156,7 +153,6 @@ def main():
             project=scaling_config["project"],
             config={
                 "scaling_config": scaling_config,
-                "vocab_file": args.vocab_file,
                 "resume": args.resume
             },
             resume=args.resume is not None,
@@ -169,20 +165,23 @@ def main():
 
 
     # Initialize the tokenizer
-    tokenizer = initialize_tokenizer(root_dir + args.vocab_file)
+    tokenizer = initialize_tokenizer(file_path=root_dir+args.vocab_path)
 
 
-    # Load and preprocess the text data
-    text = load_text(root_dir + "data/shakespeare.txt")
-    train_text, val_text = split_text(text, scaling_config["val_size"])
+    # Load and the text data
+    text = load_text(file_path=root_dir+"data/shakespeare.txt")
+    train_text, val_text = split_text(text=text, val_size=scaling_config["val_size"])
+
 
     # Run the experiment
     try:
         compute_experiment()
+
     except KeyboardInterrupt:
         print("Training interrupted by the user")
     except Exception as e:
         print(f"Error during training: {e}")
+
 
     # Finish the wandb run
     if wandb_run is not None:
@@ -191,20 +190,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-    if batch_size != 2 ** int(math.log2(batch_size)):
-        import warnings
-        warnings.warn("Batch size is not the power of 2, which may cause performance issues.")
-
-    # Train-Validation split
-    train_text, val_text = split_text(text, val_size)
-
-    train_dataset = TextDataset(train_text, tokenizer, context_size)
-    val_dataset = TextDataset(val_text, tokenizer, context_size)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-
-    print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
-    return train_loader, val_loader

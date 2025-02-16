@@ -20,7 +20,7 @@ def parse_args():
     Returns:
         argparse.Namespace: Command-line arguments.
     """
-    default_vocab_file = "char_vocab.json"
+    default_vocab_path = "char_vocab.json"
 
     parser = argparse.ArgumentParser(description='Generate text from a trained model.')
     parser.add_argument(
@@ -31,10 +31,10 @@ def parse_args():
         help="Choose the model architecture."
     )
     parser.add_argument(
-        "--vocab_file",
+        "--vocab_path",
         type=str,
-        default=default_vocab_file,
-        help=f"Path to the vocabulary JSON file. Default: {default_vocab_file}"
+        default=default_vocab_path,
+        help=f"Path to the vocabulary JSON file. Default: {default_vocab_path}"
     )
     return parser.parse_args()
 
@@ -61,7 +61,7 @@ def main():
 
 
     # Initialize the tokenizer
-    tokenizer = initialize_tokenizer(file_path=root_dir+args.file_path)
+    tokenizer = initialize_tokenizer(file_path=root_dir+args.vocab_path)
 
 
     # Initialize the model
