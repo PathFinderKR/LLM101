@@ -399,32 +399,32 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
     running_loss = 0.0
-    progress_bar = tqdm(enumerate(train_loader), total=max_steps, desc="Training")
+    progress_bar = tqdm(enumerate(train_loader, start=1), total=max_steps, desc="Training")
 
-    for step in range(1, max_steps + 1):
+    for step, (inputs, targets) in progress_bar:
+        if step > max_steps:
+            break
+
         model.train()
-        for batch_idx, (inputs, targets) in progress_bar:
-            inputs, targets = inputs.to(device), targets.to(device)
-            optimizer.zero_grad()
-            logits = model(inputs)
-            loss = model.loss(logits, targets)
-            loss.backward()
-            clip_grad_norm_(model.parameters(), grad_clip)
-            optimizer.step()
-            scheduler.step()
-            running_loss += loss.item()
-            progress_bar.set_postfix(loss=f"{running_loss / step:.4f}")
+        inputs, targets = inputs.to(device), targets.to(device)
+        optimizer.zero_grad()
+        logits = model(inputs)
+        loss = model.loss(logits, targets)
+        loss.backward()
+        clip_grad_norm_(model.parameters(), grad_clip)
+        optimizer.step()
+        scheduler.step()
+        running_loss += loss.item()
+        progress_bar.set_postfix(loss=f"{running_loss / step:.4f}")
 
-            if step % val_interval == 0:
-                evaluate(model, val_loader, device, wandb_run)
+        if step % val_interval == 0:
+            evaluate(model, val_loader, device, wandb_run)
 
-            if wandb_run is not None:
-                wandb_run.log({
-                    "Train Loss": loss.item(),
-                    "Learning Rate": optimizer.param_groups[0]['lr']
-                })
-
-            step += 1
+        if wandb_run is not None:
+            wandb_run.log({
+                "Train Loss": loss.item(),
+                "Learning Rate": optimizer.param_groups[0]['lr']
+            })
 
     progress_bar.close()
 
