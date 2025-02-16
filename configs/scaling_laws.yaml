@@ -41,7 +41,7 @@ dataset_size:
   large: 0.5
   xl: 1.0
 epochs: 1  # Fixed
-batch_size: 64
+batch_size: 256
 optimizer:
   name: AdamW  # AdamW or SGD
   params:

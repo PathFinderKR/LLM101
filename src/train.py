@@ -195,7 +195,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     model.train()
     running_loss = 0.0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {current_epoch+1}/{total_epochs}")
-    #wandb_run.watch(model, log="all", log_freq=len(dataloader))
+    wandb_run.watch(model, log="all", log_freq=len(dataloader))
 
     for batch_idx, (inputs, targets) in progress_bar:
         inputs, targets = inputs.to(device), targets.to(device)
@@ -210,10 +210,11 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
 
         if wandb_run is not None:
-            wandb_run.log({
-                "Train Loss": loss.item(),
-                "Learning Rate": optimizer.param_groups[0]['lr']
-            })
+            wandb_run.log(
+                {"Train Loss": loss.item(),
+                "Learning Rate": optimizer.param_groups[0]['lr']},
+                step=current_epoch * len(dataloader) + batch_idx
+            )
 
     progress_bar.close()
     print(f"Epoch {current_epoch+1}/{total_epochs} Loss: {running_loss / len(dataloader):.4f}")
@@ -258,10 +259,11 @@ def train_steps(model: nn.Module, train_loader: DataLoader, val_loader: DataLoad
             evaluate(model, val_loader, device, wandb_run)
 
         if wandb_run is not None:
-            wandb_run.log({
-                "Train Loss": loss.item(),
-                "Learning Rate": optimizer.param_groups[0]['lr']
-            })
+            wandb_run.log(
+                {"Train Loss": loss.item(),
+                "Learning Rate": optimizer.param_groups[0]['lr']},
+                step=step
+            )
 
     progress_bar.close()
 
