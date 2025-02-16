@@ -195,7 +195,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     model.train()
     running_loss = 0.0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {current_epoch+1}/{total_epochs}")
-    wandb_run.watch(model, log="all", log_freq=len(dataloader))
+    #wandb_run.watch(model, log="all", log_freq=len(dataloader))
 
     for batch_idx, (inputs, targets) in progress_bar:
         inputs, targets = inputs.to(device), targets.to(device)

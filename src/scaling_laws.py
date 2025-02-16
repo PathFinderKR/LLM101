@@ -46,31 +46,34 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     Plot the given data in log-log scale and log the figure to wandb.
     """
     from scipy.stats import linregress
+
+    # Convert to log-space
     x_log = np.log10(x)
     y_log = np.log10(y)
-
     slope, intercept, r_value, p_value, std_err = linregress(x_log, y_log)
 
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.scatter(x, y, label='Data', alpha=0.7)
+
+    # Best fit line in log space
     # Best fit line in log space
     fit_line_x = np.linspace(x_log.min(), x_log.max(), 100)
     fit_line_y = slope * fit_line_x + intercept
-
-    plt.figure(figsize=(6, 5))
-    plt.scatter(x, y, label='Data', alpha=0.7)
-    plt.plot(10 ** fit_line_x, 10 ** fit_line_y, 'r--',
-             label=f'Fit: y = {10 ** intercept:.2f} * x^{slope:.2f}')
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    plt.title(title)
-    plt.legend()
-    plt.show()
+    ax.plot(10 ** fit_line_x, 10 ** fit_line_y, 'r--',
+            label=f'Fit: y = {10 ** intercept:.2f} * x^{slope:.2f}')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(title)
+    ax.legend()
 
     # Log the figure to wandb
     if wandb_run is not None:
         wandb.log({title: wandb.Image(fig)})
     plt.close(fig)
+
 
 def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> float:
     """
@@ -146,7 +149,7 @@ def compute_experiment(
             val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
             train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-            print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
+            print(f"Number of tokens: {len(train_dataset)}")
 
             # Initialize the model
             model = GPT(GPTConfig(
@@ -157,11 +160,12 @@ def compute_experiment(
                 d_embed=model_sizes[model_size]["d_embed"],
                 d_ff=model_sizes[model_size]["d_ff"],
                 dropout=model_sizes[model_size]["dropout"]
-            ))
+            )).to(device)
             num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
             # FLOPs
             flops = 2 * num_params * len(train_dataset)
+            print(f"FLOPs: {flops}")
 
             # Initialize the optimizer and scheduler
             optimizer = setup_optimizer(
@@ -233,7 +237,7 @@ def dataset_size_experiment(
         device (torch.device): Device for training.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
-    dataset_sizes_values = []
+    num_tokens = []
     test_losses = []
 
     for dataset_size in dataset_sizes:
@@ -242,7 +246,7 @@ def dataset_size_experiment(
         val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_size["context_size"])
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-        print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
+        print(f"Number of tokens: {len(train_dataset)}")
 
         # Initialize the model
         model = GPT(GPTConfig(
@@ -253,7 +257,7 @@ def dataset_size_experiment(
             d_embed=model_size["d_embed"],
             d_ff=model_size["d_ff"],
             dropout=model_size["dropout"]
-        ))
+        )).to(device)
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -288,10 +292,11 @@ def dataset_size_experiment(
             wandb_run=wandb_run
         )
 
+        num_tokens.append(len(train_dataset))
         test_losses.append(test_loss)
 
     plot_scaling_laws(
-        x=dataset_sizes,
+        x=num_tokens,
         y=test_losses,
         x_label="Dataset Size",
         y_label="Test Loss",
@@ -324,7 +329,7 @@ def model_size_experiment(
         device (torch.device): Device for training.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
     """
-    model_sizes_values = []
+    parameters = []
     test_losses = []
 
     for model_size in model_sizes:
@@ -333,7 +338,6 @@ def model_size_experiment(
         val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-        print(f"Training data: {len(train_dataset)} samples, Validation data: {len(val_dataset)} samples")
 
         # Initialize the model
         model = GPT(GPTConfig(
@@ -344,9 +348,9 @@ def model_size_experiment(
             d_embed=model_sizes[model_size]["d_embed"],
             d_ff=model_sizes[model_size]["d_ff"],
             dropout=model_sizes[model_size]["dropout"]
-        ))
+        )).to(device)
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
+        print(f"Number of parameters: {num_params}")
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -382,10 +386,11 @@ def model_size_experiment(
             wandb_run=wandb_run
         )
 
+        parameters.append(num_params)
         test_losses.append(test_loss)
 
     plot_scaling_laws(
-        x=[model_sizes[model_size]["n_layer"] for model_size in model_sizes],
+        x=parameters,
         y=test_losses,
         x_label="Number of Layers",
         y_label="Test Loss",
@@ -452,11 +457,11 @@ def main():
             val_text=val_text,
             tokenizer=tokenizer,
             batch_size=scaling_config["batch_size"],
-            optimizer_name=scaling_config["optimizer"],
-            lr=scaling_config["lr"],
-            weight_decay=scaling_config["weight_decay"],
-            scheduler_type=scaling_config["scheduler"],
-            warmup_ratio=scaling_config["warmup_ratio"],
+            optimizer_name=scaling_config["optimizer"]["name"],
+            lr=scaling_config["optimizer"]["params"]["lr"],
+            weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
+            scheduler_type=scaling_config["scheduler"]["type"],
+            warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
             wandb_run=wandb_run
@@ -468,11 +473,11 @@ def main():
             val_text=val_text,
             tokenizer=tokenizer,
             batch_size=scaling_config["batch_size"],
-            optimizer_name=scaling_config["optimizer"],
-            lr=scaling_config["lr"],
-            weight_decay=scaling_config["weight_decay"],
-            scheduler_type=scaling_config["scheduler"],
-            warmup_ratio=scaling_config["warmup_ratio"],
+            optimizer_name=scaling_config["optimizer"]["name"],
+            lr=scaling_config["optimizer"]["params"]["lr"],
+            weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
+            scheduler_type=scaling_config["scheduler"]["type"],
+            warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
             wandb_run=wandb_run
@@ -484,11 +489,11 @@ def main():
             val_text=val_text,
             tokenizer=tokenizer,
             batch_size=scaling_config["batch_size"],
-            optimizer_name=scaling_config["optimizer"],
-            lr=scaling_config["lr"],
-            weight_decay=scaling_config["weight_decay"],
-            scheduler_type=scaling_config["scheduler"],
-            warmup_ratio=scaling_config["warmup_ratio"],
+            optimizer_name=scaling_config["optimizer"]["name"],
+            lr=scaling_config["optimizer"]["params"]["lr"],
+            weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
+            scheduler_type=scaling_config["scheduler"]["type"],
+            warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
             wandb_run=wandb_run
