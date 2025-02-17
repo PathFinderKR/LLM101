@@ -136,7 +136,6 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
 
     return model, best_train_loss
 
-
 def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flops: int, wandb_run: wandb.sdk.wandb_run.Run) -> float:
     """
     Evaluate the model on the validation set.
