@@ -103,11 +103,11 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     # Train loss vs step
     # Learning rate vs step
     # Train loss vs compute
+    wandb_run.define_metric("Step", hidden=True)
+    wandb_run.define_metric("Compute", hidden=True)
     wandb_run.define_metric("Train Loss vs Step", step_metric="Step")
     wandb_run.define_metric("Learning Rate vs Step", step_metric="Step")
     wandb_run.define_metric("Train Loss vs Compute", step_metric="Compute")
-    wandb_run.define_metric("Step", hidden=True)
-    wandb_run.define_metric("Compute", hidden=True)
 
     for batch_idx, (inputs, targets) in progress_bar:
         inputs, targets = inputs.to(device), targets.to(device)
@@ -157,8 +157,8 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
     # Charts
     # Validation loss vs compute
-    wandb_run.define_metric("Validation Loss vs Compute", step_metric="Compute")
     wandb_run.define_metric("Compute", hidden=True)
+    wandb_run.define_metric("Validation Loss vs Compute", step_metric="Compute")
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in progress_bar:
