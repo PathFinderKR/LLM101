@@ -77,7 +77,7 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     plt.close(fig)
 
 
-def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, current_epoch: int, total_epochs: int, grad_clip: float, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> nn.Module:
+def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, grad_clip: float, flops: int, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> nn.Module:
     """
     Train the model for one epoch.
 
@@ -86,9 +86,8 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         dataloader (DataLoader): DataLoader for the training data.
         optimizer (Optimizer): Optimizer to use.
         scheduler (lr_scheduler): Learning rate scheduler.
-        current_epoch (int): Current epoch number.
-        total_epochs (int): Total number of epochs.
         grad_clip (float): Gradient clipping value.
+        flops (int): Floating point operations per second for the model.
         device (torch.device): Device to run the model on.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
 
@@ -97,7 +96,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     """
     model.train()
     running_loss = 0.0
-    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {current_epoch+1}/{total_epochs}")
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Training")
     wandb_run.watch(model, log="all", log_freq=len(dataloader))
 
     for batch_idx, (inputs, targets) in progress_bar:
@@ -114,24 +113,29 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
 
         if wandb_run is not None:
             wandb_run.log(
+                {"Compute vs Train Loss": loss.item()},
+                step=flops * (batch_idx + 1)
+            )
+            wandb_run.log(
                 {"Train Loss": loss.item(),
-                "Learning Rate": optimizer.param_groups[0]['lr']},
-                step=current_epoch * len(dataloader) + batch_idx
+                    "Learning Rate": optimizer.param_groups[0]['lr']},
+                step=batch_idx + 1
             )
 
     progress_bar.close()
-    print(f"Epoch {current_epoch+1}/{total_epochs} Loss: {running_loss / len(dataloader):.4f}")
+    print(f"Loss: {running_loss / len(dataloader):.4f}")
 
     return model
 
 
-def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> float:
+def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flops: int, wandb_run: wandb.sdk.wandb_run.Run) -> float:
     """
     Evaluate the model on the validation set.
 
     Args:
         model (nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader for the validation data.
+        flops (int): Floating point operations per second for the model.
         device (torch.device): Device to run the model on.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
 
@@ -155,9 +159,10 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wan
     avg_loss = running_loss / len(dataloader)
 
     if wandb_run is not None:
-        wandb_run.log({
-            "Validation Loss": avg_loss,
-        })
+        wandb_run.log(
+            {"Validation Loss": avg_loss},
+            steps=flops
+        )
 
     print(f"Validation Loss: {avg_loss:.4f}")
 
@@ -168,7 +173,8 @@ def compute_experiment(
         model_sizes: dict, dataset_sizes: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
-        grad_clip: float, device: torch.device, project: str, root_dir: str):
+        grad_clip: float, device: torch.device, root_dir: str
+):
     """
     Compute vs test loss scaling laws.
 
@@ -185,18 +191,17 @@ def compute_experiment(
         warmup_ratio (float): Ratio of the warmup steps.
         grad_clip (float): Gradient clipping value.
         device (torch.device): Device for training.
-        project (str): Name of the project.
         root_dir (str): Root directory of the project.
     """
     compute_values = []
     test_losses = []
-    exp = 1
+    project = "Compute vs Loss"
 
     for model_size in model_sizes:
         for dataset_size in dataset_sizes:
             wandb_run = wandb.init(
                 project=project,
-                name=f"Compute vs Test Loss - exp {exp}",
+                name=f"Model Size: {model_size} - Dataset Size: {dataset_size}",
                 dir=root_dir
             )
             print(f"Wandb run initialized: {wandb_run.id}")
@@ -255,15 +260,15 @@ def compute_experiment(
                 dataloader=train_loader,
                 optimizer=optimizer,
                 scheduler=scheduler,
-                current_epoch=0,
-                total_epochs=1,
                 grad_clip=grad_clip,
+                flops=flops,
                 device=device,
                 wandb_run=wandb_run
             )
             test_loss = evaluate(
                 model=model,
                 dataloader=val_loader,
+                flops=flops,
                 device=device,
                 wandb_run=wandb_run
             )
@@ -271,8 +276,12 @@ def compute_experiment(
             compute_values.append(flops)
             test_losses.append(test_loss)
             wandb_run.finish()
-            exp += 1
 
+    wandb_run = wandb.init(
+        project=project,
+        name="Compute vs Test Loss",
+        dir=root_dir
+    )
     plot_scaling_laws(
         x=compute_values,
         y=test_losses,
@@ -287,7 +296,8 @@ def dataset_size_experiment(
         dataset_sizes: dict, model_size: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
-        grad_clip: float, device: torch.device, project: str, root_dir: str):
+        grad_clip: float, device: torch.device, root_dir: str
+):
     """
     Dataset size vs test loss scaling laws.
 
@@ -305,17 +315,16 @@ def dataset_size_experiment(
         warmup_ratio (float): Ratio of the warmup steps.
         grad_clip (float): Gradient clipping value.
         device (torch.device): Device for training.
-        project (str): Name of the project.
         root_dir (str): Root directory of the project.
     """
     num_tokens = []
     test_losses = []
-    exp = 1
+    project = "Dataset size vs Loss"
 
     for dataset_size in dataset_sizes:
         wandb_run = wandb.init(
             project=project,
-            name=f"Dataset Size vs Test Loss - exp {exp}",
+            name=f"Dataset size: {dataset_size}",
             dir=root_dir
         )
         print(f"Wandb run initialized: {wandb_run.id}")
@@ -337,6 +346,10 @@ def dataset_size_experiment(
             d_ff=model_size["d_ff"],
             dropout=model_size["dropout"]
         )).to(device)
+        num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+        # FLOPs
+        flops = 2 * num_params * len(train_dataset)
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -358,15 +371,15 @@ def dataset_size_experiment(
             dataloader=train_loader,
             optimizer=optimizer,
             scheduler=scheduler,
-            current_epoch=0,
-            total_epochs=1,
             grad_clip=grad_clip,
+            flops=flops,
             device=device,
             wandb_run=wandb_run
         )
         test_loss = evaluate(
             model=model,
             dataloader=val_loader,
+            flops=flops,
             device=device,
             wandb_run=wandb_run
         )
@@ -374,8 +387,12 @@ def dataset_size_experiment(
         num_tokens.append(len(train_dataset))
         test_losses.append(test_loss)
         wandb_run.finish()
-        exp += 1
 
+    wandb_run = wandb.init(
+        project=project,
+        name="Dataset size vs Test Loss",
+        dir=root_dir
+    )
     plot_scaling_laws(
         x=num_tokens,
         y=test_losses,
@@ -390,7 +407,8 @@ def model_size_experiment(
         model_sizes: dict, dataset_size: float,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
-        grad_clip: float, device: torch.device, project: str, root_dir: str):
+        grad_clip: float, device: torch.device, root_dir: str
+):
     """
     Model size vs test loss scaling laws.
 
@@ -407,17 +425,16 @@ def model_size_experiment(
         warmup_ratio (float): Ratio of the warmup steps.
         grad_clip (float): Gradient clipping value.
         device (torch.device): Device for training.
-        project (str): Name of the project.
         root_dir (str): Root directory of the project.
     """
     parameters = []
     test_losses = []
-    exp = 1
+    project = "Parameters vs Loss"
 
     for model_size in model_sizes:
         wandb_run = wandb.init(
             project=project,
-            name=f"Parameters vs Test Loss - exp {exp}",
+            name=f"Model size: {model_size}",
             dir=root_dir
         )
         print(f"Wandb run initialized: {wandb_run.id}")
@@ -451,6 +468,9 @@ def model_size_experiment(
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of parameters: {num_params}")
 
+        # FLOPs
+        flops = 2 * num_params * len(train_dataset)
+
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
             model=model,
@@ -465,22 +485,21 @@ def model_size_experiment(
             total_steps=len(train_loader) * 1
         )
 
-
         # Train the model for one epoch
         model = train_epoch(
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
             scheduler=scheduler,
-            current_epoch=0,
-            total_epochs=1,
             grad_clip=grad_clip,
+            flops=flops,
             device=device,
             wandb_run=wandb_run
         )
         test_loss = evaluate(
             model=model,
             dataloader=val_loader,
+            flops=flops,
             device=device,
             wandb_run=wandb_run
         )
@@ -488,8 +507,12 @@ def model_size_experiment(
         parameters.append(num_params)
         test_losses.append(test_loss)
         wandb_run.finish()
-        exp += 1
 
+    wandb_run = wandb.init(
+        project=project,
+        name="Parameters vs Test Loss",
+        dir=root_dir
+    )
     plot_scaling_laws(
         x=parameters,
         y=test_losses,
@@ -554,7 +577,6 @@ def main():
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
-            project=scaling_config["project"],
             root_dir=root_dir
         )
         dataset_size_experiment(
@@ -571,7 +593,6 @@ def main():
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
-            project=scaling_config["project"],
             root_dir=root_dir
         )
         model_size_experiment(
@@ -587,7 +608,6 @@ def main():
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
             grad_clip=scaling_config["grad_clip"],
             device=device,
-            project=scaling_config["project"],
             root_dir=root_dir
         )
 
