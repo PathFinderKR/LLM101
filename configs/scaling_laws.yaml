@@ -6,7 +6,7 @@ model_size:
     n_head: 2
     d_embed: 128
     d_ff: 512
-    dropout: 0.1
+    dropout: 0.2
     flash_attention: False
   medium:
     context_size: 256
@@ -55,4 +55,4 @@ mixed_precision: False
 seed: 101
 
 dataset: shakespeare  # shakespeare or openweb
-val_size: 0.1
+val_size: 0.2

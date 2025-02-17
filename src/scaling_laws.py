@@ -240,6 +240,7 @@ def compute_experiment(
             print(f"Number of tokens: {len(train_dataset)}")
 
             # Initialize the model
+            
             model = GPT(GPTConfig(
                 vocab_size=tokenizer.vocab_size,
                 context_size=model_sizes[model_size]["context_size"],
@@ -252,7 +253,7 @@ def compute_experiment(
             num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
             # FLOPs
-            flops = 2 * num_params * len(train_dataset)
+            flops = 6 * num_params * len(train_dataset)
             print(f"FLOPs: {flops}")
 
             # Initialize the optimizer and scheduler
@@ -374,7 +375,7 @@ def dataset_size_experiment(
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
         # FLOPs
-        flops = 2 * num_params * len(train_dataset)
+        flops = 6 * num_params * len(train_dataset)
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -504,7 +505,7 @@ def model_size_experiment(
         print(f"Number of parameters: {num_params}")
 
         # FLOPs
-        flops = 2 * num_params * len(train_dataset)
+        flops = 6 * num_params * len(train_dataset)
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
