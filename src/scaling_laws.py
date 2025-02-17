@@ -77,7 +77,7 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     plt.close(fig)
 
 
-def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, grad_clip: float, flops: int, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> nn.Module:
+def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, grad_clip: float, flops: int, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> (nn.Module, float):
     """
     Train the model for one epoch.
 
@@ -93,11 +93,21 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
 
     Returns:
         model (nn.Module): The trained model.
+        train_loss (float): The average loss on the training set.
     """
     model.train()
     running_loss = 0.0
+    best_train_loss = float("inf")
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Training")
-    wandb_run.watch(model, log="all", log_freq=len(dataloader))
+    # Charts
+    # Train loss vs step
+    # Learning rate vs step
+    # Train loss vs compute
+    wandb_run.define_metric("Step", hidden=True)
+    wandb_run.define_metric("Compute", hidden=True)
+    wandb_run.define_metric("Train Loss vs Step", step_metric="Step")
+    wandb_run.define_metric("Learning Rate vs Step", step_metric="Step")
+    wandb_run.define_metric("Train Loss vs Compute", step_metric="Compute")
 
     for batch_idx, (inputs, targets) in progress_bar:
         inputs, targets = inputs.to(device), targets.to(device)
@@ -109,23 +119,22 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         optimizer.step()
         scheduler.step()
         running_loss += loss.item()
+        if loss.item() < best_train_loss:
+            best_train_loss = loss.item()
         progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
 
         if wandb_run is not None:
-            wandb_run.log(
-                {"Compute vs Train Loss": loss.item()},
-                step=flops * (batch_idx + 1)
-            )
-            wandb_run.log(
-                {"Train Loss": loss.item(),
-                    "Learning Rate": optimizer.param_groups[0]['lr']},
-                step=batch_idx + 1
-            )
+            wandb_run.log({
+                "Train Loss": loss.item(),
+                "Learning Rate": optimizer.param_groups[0]["lr"],
+                "Compute": flops * (batch_idx + 1),
+                "Step": (batch_idx + 1)
+            })
 
     progress_bar.close()
     print(f"Loss: {running_loss / len(dataloader):.4f}")
 
-    return model
+    return model, best_train_loss
 
 
 def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flops: int, wandb_run: wandb.sdk.wandb_run.Run) -> float:
@@ -140,11 +149,15 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
 
     Returns:
-        loss (float): The average loss on the validation set.
+        val_loss (float): The average loss on the validation set.
     """
     model.eval()
     running_loss = 0.0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
+    # Charts
+    # Validation loss vs compute
+    wandb_run.define_metric("Compute", hidden=True)
+    wandb_run.define_metric("Validation Loss", step_metric="Compute")
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in progress_bar:
@@ -156,17 +169,17 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
 
     progress_bar.close()
 
-    avg_loss = running_loss / len(dataloader)
+    val_loss = running_loss / len(dataloader)
 
     if wandb_run is not None:
-        wandb_run.log(
-            {"Validation Loss": avg_loss},
-            steps=flops
-        )
+        wandb_run.log({
+            "Validation Loss": val_loss,
+            "Compute": flops * len(dataloader)
+        })
 
-    print(f"Validation Loss: {avg_loss:.4f}")
+    print(f"Validation Loss: {val_loss:.4f}")
 
-    return avg_loss
+    return val_loss
 
 
 def compute_experiment(
@@ -194,6 +207,7 @@ def compute_experiment(
         root_dir (str): Root directory of the project.
     """
     compute_values = []
+    train_losses = []
     test_losses = []
     project = "Compute vs Loss"
 
@@ -201,7 +215,7 @@ def compute_experiment(
         for dataset_size in dataset_sizes:
             wandb_run = wandb.init(
                 project=project,
-                name=f"Model Size: {model_size} - Dataset Size: {dataset_size}",
+                name=f"Model size: {model_size} - Dataset size: {dataset_size}",
                 dir=root_dir
             )
             print(f"Wandb run initialized: {wandb_run.id}")
@@ -255,7 +269,7 @@ def compute_experiment(
             )
 
             # Train the model for one epoch
-            model = train_epoch(
+            model, train_loss = train_epoch(
                 model=model,
                 dataloader=train_loader,
                 optimizer=optimizer,
@@ -274,13 +288,22 @@ def compute_experiment(
             )
 
             compute_values.append(flops)
+            train_losses.append(train_loss)
             test_losses.append(test_loss)
             wandb_run.finish()
 
     wandb_run = wandb.init(
         project=project,
-        name="Compute vs Test Loss",
+        name=project,
         dir=root_dir
+    )
+    plot_scaling_laws(
+        x=compute_values,
+        y=train_losses,
+        x_label="Compute (FLOPs)",
+        y_label="Train Loss",
+        title="Compute vs Train Loss",
+        wandb_run=wandb_run
     )
     plot_scaling_laws(
         x=compute_values,
@@ -318,6 +341,7 @@ def dataset_size_experiment(
         root_dir (str): Root directory of the project.
     """
     num_tokens = []
+    train_losses = []
     test_losses = []
     project = "Dataset size vs Loss"
 
@@ -366,7 +390,7 @@ def dataset_size_experiment(
         )
 
         # Train the model for one epoch
-        model = train_epoch(
+        model, train_loss = train_epoch(
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
@@ -385,13 +409,22 @@ def dataset_size_experiment(
         )
 
         num_tokens.append(len(train_dataset))
+        train_losses.append(train_loss)
         test_losses.append(test_loss)
         wandb_run.finish()
 
     wandb_run = wandb.init(
         project=project,
-        name="Dataset size vs Test Loss",
+        name=project,
         dir=root_dir
+    )
+    plot_scaling_laws(
+        x=num_tokens,
+        y=train_losses,
+        x_label="Dataset Size",
+        y_label="Train Loss",
+        title="Dataset Size vs Train Loss",
+        wandb_run=wandb_run
     )
     plot_scaling_laws(
         x=num_tokens,
@@ -428,6 +461,7 @@ def model_size_experiment(
         root_dir (str): Root directory of the project.
     """
     parameters = []
+    train_losses = []
     test_losses = []
     project = "Parameters vs Loss"
 
@@ -486,7 +520,7 @@ def model_size_experiment(
         )
 
         # Train the model for one epoch
-        model = train_epoch(
+        model, train_loss = train_epoch(
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
@@ -510,8 +544,16 @@ def model_size_experiment(
 
     wandb_run = wandb.init(
         project=project,
-        name="Parameters vs Test Loss",
+        name=project,
         dir=root_dir
+    )
+    plot_scaling_laws(
+        x=parameters,
+        y=train_losses,
+        x_label="Number of Parameters",
+        y_label="Train Loss",
+        title="Model Size vs Train Loss",
+        wandb_run=wandb_run
     )
     plot_scaling_laws(
         x=parameters,

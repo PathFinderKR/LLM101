@@ -292,16 +292,16 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, wan
 
     progress_bar.close()
 
-    avg_loss = running_loss / len(dataloader)
-    perplexity = math.exp(avg_loss)
+    val_loss = running_loss / len(dataloader)
+    perplexity = math.exp(val_loss)
 
     if wandb_run is not None:
         wandb_run.log({
-            "Validation Loss": avg_loss,
+            "Validation Loss": val_loss,
             "Perplexity": perplexity
         })
 
-    print(f"Validation Loss: {avg_loss:.4f}, Perplexity: {perplexity:.4f}")
+    print(f"Validation Loss: {val_loss:.4f}, Perplexity: {perplexity:.4f}")
 
 
 def main():
