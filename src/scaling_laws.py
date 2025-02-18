@@ -171,11 +171,13 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     progress_bar.close()
 
     val_loss = running_loss / len(dataloader)
+    compute = flops * len(dataloader)
+    print(f"compute: {compute}")
 
     if wandb_run is not None:
         wandb_run.log({
             "Validation Loss vs Compute": val_loss,
-            "Compute": flops * len(dataloader)
+            "Compute": compute
         })
 
     print(f"Validation Loss: {val_loss:.4f}")

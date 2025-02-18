@@ -16,14 +16,6 @@ model_size:
     d_ff: 1536
     dropout: 0.2
     flash_attention: False
-  large:
-    context_size: 256
-    n_layer: 6
-    n_head: 8
-    d_embed: 512
-    d_ff: 2048
-    dropout: 0.2
-    flash_attention: False
 
 # Training
 dataset_size:
