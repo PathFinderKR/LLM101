@@ -4,6 +4,7 @@ import os
 import sys
 import argparse
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('Agg')
 from tqdm import tqdm
