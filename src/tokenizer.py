@@ -121,7 +121,7 @@ class CharTokenizer:
         print(f"Vocabulary loaded from {file_path}.")
 
 
-class ContextCharTokenizer:
+class CharContextTokenizer:
     def __init__(self, vocab: Optional[Dict[str, int]] = None):
         """
         Initialize the context-aware character-level tokenizer.
@@ -405,7 +405,7 @@ def main():
     if args.type == "char":
         tokenizer = CharTokenizer()
     elif args.type == "char-context":
-        tokenizer = ContextCharTokenizer()
+        tokenizer = CharContextTokenizer()
     elif args.type == "bpe":
         tokenizer = BPETokenizer()
     else:

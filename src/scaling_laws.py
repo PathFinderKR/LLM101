@@ -502,7 +502,8 @@ def model_size_experiment(
 
         for model_size, model_config in model_configs.items():
             for dataset_size in dataset_sizes:
-                if model_size != "large":
+                print(f"Model size: {model_size}, Dataset size: {dataset_size}")
+                if dataset_size != "large":
                     continue
                 wandb_run = wandb.init(
                     project=project,
@@ -510,7 +511,7 @@ def model_size_experiment(
                     dir=root_dir
                 )
 
-                subset_train_text = train_text[:int(len(train_text) * dataset_size)]
+                subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
                 train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
                 val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
                 if model_size == "small":
