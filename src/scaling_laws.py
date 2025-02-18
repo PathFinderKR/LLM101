@@ -206,7 +206,7 @@ def compute_experiment(
     """
     model_architecture = ["bigram", "mlp", "gpt"]
     for model_arch in model_architecture:
-        project = f"Compute vs Loss ({model_arch})"
+        project = f"Compute vs Loss"
         compute_values = []
         train_losses = []
         test_losses = []
@@ -215,7 +215,7 @@ def compute_experiment(
             for dataset_size in dataset_sizes:
                 wandb_run = wandb.init(
                     project=project,
-                    name=f"Model size: {model_size} - Dataset size: {dataset_size}",
+                    name=f"{model_arch}({model_size}) - Dataset size: {dataset_size}",
                     dir=root_dir
                 )
                 print(f"Wandb run initialized: {wandb_run.id}")
@@ -355,7 +355,7 @@ def dataset_size_experiment(
     """
     model_architecture = ["bigram", "mlp", "gpt"]
     for model_arch in model_architecture:
-        project = f"Compute vs Loss ({model_arch})"
+        project = f"Dataset size vs Loss"
         num_tokens = []
         train_losses = []
         test_losses = []
@@ -363,7 +363,7 @@ def dataset_size_experiment(
         for dataset_size in dataset_sizes:
             wandb_run = wandb.init(
                 project=project,
-                name=f"Dataset size: {dataset_size}",
+                name=f"{model_arch}({model_size}) - Dataset size: {dataset_size}",
                 dir=root_dir
             )
             print(f"Wandb run initialized: {wandb_run.id}")
@@ -496,7 +496,7 @@ def model_size_experiment(
     test_losses = []
     model_architecture = ["bigram", "mlp", "gpt"]
     for model_arch in model_architecture:
-        project = f"Compute vs Loss ({model_arch})"
+        project = f"Model size vs Loss"
         parameters = []
         train_losses = []
         test_losses = []
@@ -505,7 +505,7 @@ def model_size_experiment(
         for model_size in model_sizes:
             wandb_run = wandb.init(
                 project=project,
-                name=f"Model size: {model_size}",
+                name=f"{model_arch}({model_size}) - Dataset size: {dataset_size}",
                 dir=root_dir
             )
             print(f"Wandb run initialized: {wandb_run.id}")
