@@ -231,8 +231,6 @@ def compute_experiment(
                 batch_size = 128
             elif model_size == "large":
                 batch_size = 64
-            elif model_size == "xl":
-                batch_size = 32
             else:
                 batch_size = 128
             train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
@@ -240,7 +238,6 @@ def compute_experiment(
             print(f"Number of tokens: {len(train_dataset)}")
 
             # Initialize the model
-            
             model = GPT(GPTConfig(
                 vocab_size=tokenizer.vocab_size,
                 context_size=model_sizes[model_size]["context_size"],
@@ -315,6 +312,7 @@ def compute_experiment(
         title="Compute vs Test Loss",
         wandb_run=wandb_run
     )
+    wandb_run.finish()
 
 
 def dataset_size_experiment(
@@ -436,6 +434,7 @@ def dataset_size_experiment(
         title="Dataset Size vs Test Loss",
         wandb_run=wandb_run
     )
+    wandb_run.finish()
 
 
 def model_size_experiment(
@@ -565,6 +564,7 @@ def model_size_experiment(
         title="Model Size vs Test Loss",
         wandb_run=wandb_run
     )
+    wandb_run.finish()
 
 
 def main():
