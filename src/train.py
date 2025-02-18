@@ -358,7 +358,8 @@ def main():
             vocab_size=tokenizer.vocab_size,
             context_size=model_config["context_size"],
             d_embed=model_config["d_embed"],
-            d_ff=model_config["d_ff"]
+            d_ff=model_config["d_ff"],
+            dropout=model_config["dropout"]
         ))
     elif args.model == "gpt":
         model = GPT(GPTConfig(

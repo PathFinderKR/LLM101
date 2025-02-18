@@ -11,18 +11,28 @@ class MLPConfig:
     context_size: int
     d_embed: int
     d_ff: int
+    dropout: float
 
 
 class MLP(nn.Module):
-    def __init__(self, config: MLPConfig):
+    def __init__(self, config):
         super(MLP, self).__init__()
         self.config = config
 
         self.token_embedding = nn.Embedding(config.vocab_size, config.d_embed)
+
         self.mlp = nn.Sequential(
             nn.Linear(config.context_size * config.d_embed, config.d_ff),
-            nn.Tanh(),
-            nn.Linear(config.d_ff, config.vocab_size)
+            nn.LayerNorm(config.d_ff),
+            nn.GELU(),
+            nn.Dropout(config.dropout),
+
+            nn.Linear(config.d_ff, config.d_ff // 2),
+            nn.LayerNorm(config.d_ff // 2),
+            nn.GELU(),
+            nn.Dropout(config.dropout),
+
+            nn.Linear(config.d_ff // 2, config.vocab_size)
         )
 
     def forward(self, x):  # x: (batch_size, context_size)

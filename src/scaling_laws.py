@@ -19,6 +19,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.utils import set_seed, configure_device, load_text, split_text, load_config
 from src.tokenizer import CharTokenizer, BPETokenizer
 from src.train import TextDataset, initialize_tokenizer, setup_optimizer, setup_scheduler
+from models.bigram.bigram import Bigram, BigramConfig
+from models.mlp.mlp import MLP, MLPConfig
 from models.gpt.gpt import GPT, GPTConfig
 
 
@@ -32,6 +34,13 @@ def parse_args():
     default_vocab_path = "char_vocab.json"
 
     parser = argparse.ArgumentParser(description="Scaling Laws for Neural Language Models.")
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["bigram", "mlp", "gpt", "megabyte"],
+        required=True,
+        help="Choose the model architecture."
+    )
     parser.add_argument(
         "--vocab_path",
         type=str,
@@ -179,6 +188,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
 
 
 def compute_experiment(
+        model_arch: str,
         model_sizes: dict, dataset_sizes: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
@@ -188,6 +198,7 @@ def compute_experiment(
     Compute vs test loss scaling laws.
 
     Args:
+        model_arch (str): The model architecture.
         model_sizes (dict): Dictionary with the model sizes.
         dataset_sizes (dict): Dictionary with the dataset sizes.
         train_text (str): Text data for training.
@@ -205,7 +216,7 @@ def compute_experiment(
     compute_values = []
     train_losses = []
     test_losses = []
-    project = "Compute vs Loss"
+    project = f"Compute vs Loss ({model_arch})"
 
     for model_size in model_sizes:
         for dataset_size in dataset_sizes:
@@ -233,15 +244,30 @@ def compute_experiment(
             print(f"Number of tokens: {len(train_dataset)}")
 
             # Initialize the model
-            model = GPT(GPTConfig(
-                vocab_size=tokenizer.vocab_size,
-                context_size=model_sizes[model_size]["context_size"],
-                n_layer=model_sizes[model_size]["n_layer"],
-                n_head=model_sizes[model_size]["n_head"],
-                d_embed=model_sizes[model_size]["d_embed"],
-                d_ff=model_sizes[model_size]["d_ff"],
-                dropout=model_sizes[model_size]["dropout"]
-            )).to(device)
+            if model_arch == "bigram":
+                model = Bigram(BigramConfig(
+                    vocab_size=tokenizer.vocab_size,
+                )).to(device)
+            elif model_arch == "mlp":
+                model = MLP(MLPConfig(
+                    vocab_size=tokenizer.vocab_size,
+                    context_size=model_sizes[model_size]["context_size"],
+                    d_embed=model_sizes[model_size]["d_embed"],
+                    d_ff=model_sizes[model_size]["d_ff"],
+                    dropout=model_sizes[model_size]["dropout"]
+                )).to(device)
+            elif model_arch == "gpt":
+                model = GPT(GPTConfig(
+                    vocab_size=tokenizer.vocab_size,
+                    context_size=model_sizes[model_size]["context_size"],
+                    n_layer=model_sizes[model_size]["n_layer"],
+                    n_head=model_sizes[model_size]["n_head"],
+                    d_embed=model_sizes[model_size]["d_embed"],
+                    d_ff=model_sizes[model_size]["d_ff"],
+                    dropout=model_sizes[model_size]["dropout"]
+                )).to(device)
+            else:
+                raise ValueError(f"Model architecture {model_arch} is not supported")
             num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
             # FLOPs
@@ -310,6 +336,7 @@ def compute_experiment(
 
 
 def dataset_size_experiment(
+        model_arch: str,
         dataset_sizes: dict, model_size: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
@@ -319,6 +346,7 @@ def dataset_size_experiment(
     Dataset size vs test loss scaling laws.
 
     Args:
+        model_arch (str): The model architecture.
         dataset_sizes (dict): Dictionary with the dataset sizes.
         model_size (dict): Dictionary with the model size.
         train_text (str): Text data for training.
@@ -337,7 +365,7 @@ def dataset_size_experiment(
     num_tokens = []
     train_losses = []
     test_losses = []
-    project = "Dataset size vs Loss"
+    project = f"Dataset size vs Loss ({model_arch})"
 
     for dataset_size in dataset_sizes:
         wandb_run = wandb.init(
@@ -355,15 +383,30 @@ def dataset_size_experiment(
         print(f"Number of tokens: {len(train_dataset)}")
 
         # Initialize the model
-        model = GPT(GPTConfig(
-            vocab_size=tokenizer.vocab_size,
-            context_size=model_size["context_size"],
-            n_layer=model_size["n_layer"],
-            n_head=model_size["n_head"],
-            d_embed=model_size["d_embed"],
-            d_ff=model_size["d_ff"],
-            dropout=model_size["dropout"]
-        )).to(device)
+        if model_arch == "bigram":
+            model = Bigram(BigramConfig(
+                vocab_size=tokenizer.vocab_size
+            )).to(device)
+        elif model_arch == "mlp":
+            model = MLP(MLPConfig(
+                vocab_size=tokenizer.vocab_size,
+                context_size=model_size["context_size"],
+                d_embed=model_size["d_embed"],
+                d_ff=model_size["d_ff"],
+                dropout=model_size["dropout"]
+            )).to(device)
+        elif model_arch == "gpt":
+            model = GPT(GPTConfig(
+                vocab_size=tokenizer.vocab_size,
+                context_size=model_size["context_size"],
+                n_layer=model_size["n_layer"],
+                n_head=model_size["n_head"],
+                d_embed=model_size["d_embed"],
+                d_ff=model_size["d_ff"],
+                dropout=model_size["dropout"]
+            )).to(device)
+        else:
+            raise ValueError(f"Model architecture {model_arch} is not supported")
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
         # FLOPs
@@ -432,6 +475,7 @@ def dataset_size_experiment(
 
 
 def model_size_experiment(
+        model_arch: str,
         model_sizes: dict, dataset_size: float,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
@@ -441,6 +485,7 @@ def model_size_experiment(
     Model size vs test loss scaling laws.
 
     Args:
+        model_arch (str): The model architecture.
         model_sizes (dict): Dictionary with the model sizes.
         dataset_size (float): Dictionary with the dataset sizes.
         train_text (str): Text data for training.
@@ -458,7 +503,7 @@ def model_size_experiment(
     parameters = []
     train_losses = []
     test_losses = []
-    project = "Parameters vs Loss"
+    project = f"Parameters vs Loss ({model_arch})"
 
     for model_size in model_sizes:
         wandb_run = wandb.init(
@@ -485,15 +530,30 @@ def model_size_experiment(
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
         # Initialize the model
-        model = GPT(GPTConfig(
-            vocab_size=tokenizer.vocab_size,
-            context_size=model_sizes[model_size]["context_size"],
-            n_layer=model_sizes[model_size]["n_layer"],
-            n_head=model_sizes[model_size]["n_head"],
-            d_embed=model_sizes[model_size]["d_embed"],
-            d_ff=model_sizes[model_size]["d_ff"],
-            dropout=model_sizes[model_size]["dropout"]
-        )).to(device)
+        if model_arch == "bigram":
+            model = Bigram(BigramConfig(
+                vocab_size=tokenizer.vocab_size
+            )).to(device)
+        elif model_arch == "mlp":
+            model = MLP(MLPConfig(
+                vocab_size=tokenizer.vocab_size,
+                context_size=model_size["context_size"],
+                d_embed=model_size["d_embed"],
+                d_ff=model_size["d_ff"],
+                dropout=model_size["dropout"]
+            )).to(device)
+        elif model_arch == "gpt":
+            model = GPT(GPTConfig(
+                vocab_size=tokenizer.vocab_size,
+                context_size=model_size["context_size"],
+                n_layer=model_size["n_layer"],
+                n_head=model_size["n_head"],
+                d_embed=model_size["d_embed"],
+                d_ff=model_size["d_ff"],
+                dropout=model_size["dropout"]
+            )).to(device)
+        else:
+            raise ValueError(f"Model architecture {model_arch} is not supported")
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Number of parameters: {num_params}")
 
@@ -600,6 +660,7 @@ def main():
     # Run the experiment
     try:
         compute_experiment(
+            model_arch=args.model,
             model_sizes=model_sizes,
             dataset_sizes=dataset_sizes,
             train_text=train_text,
@@ -615,6 +676,7 @@ def main():
             root_dir=root_dir
         )
         dataset_size_experiment(
+            model_arch=args.model,
             dataset_sizes=dataset_sizes,
             model_size=model_sizes["medium"],
             train_text=train_text,
@@ -631,6 +693,7 @@ def main():
             root_dir=root_dir
         )
         model_size_experiment(
+            model_arch=args.model,
             model_sizes=model_sizes,
             dataset_size=dataset_sizes["medium"],
             train_text=train_text,
