@@ -5,6 +5,7 @@ import sys
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 from tqdm import tqdm
 import torch
 from torch import nn
