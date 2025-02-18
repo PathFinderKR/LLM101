@@ -512,7 +512,7 @@ def main():
 
     # Save the model
     if not args.debug:
-        save_checkpoint(model=model, file_path=root_dir+f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt")
+        save_checkpoint(model=model, file_path=root_dir+f"models/{model_config["name"]}/checkpoints/{train_config["project"]}.pt")
 
 
     # Finish wandb run

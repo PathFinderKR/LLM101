@@ -447,28 +447,28 @@ def dataset_size_experiment(
                 test_losses.append(test_loss)
                 wandb_run.finish()
 
-            wandb_run = wandb.init(
-                project=project,
-                name=project,
-                dir=root_dir
-            )
-            plot_scaling_laws(
-                x=num_tokens,
-                y=train_losses,
-                x_label="Dataset Size",
-                y_label="Train Loss",
-                title=f"Dataset Size vs Train Loss ({architecture})",
-                wandb_run=wandb_run
-            )
-            plot_scaling_laws(
-                x=num_tokens,
-                y=test_losses,
-                x_label="Dataset Size",
-                y_label="Test Loss",
-                title=f"Dataset Size vs Test Loss ({architecture})",
-                wandb_run=wandb_run
-            )
-            wandb_run.finish()
+        wandb_run = wandb.init(
+            project=project,
+            name=project,
+            dir=root_dir
+        )
+        plot_scaling_laws(
+            x=num_tokens,
+            y=train_losses,
+            x_label="Dataset Size",
+            y_label="Train Loss",
+            title=f"Dataset Size vs Train Loss ({architecture})",
+            wandb_run=wandb_run
+        )
+        plot_scaling_laws(
+            x=num_tokens,
+            y=test_losses,
+            x_label="Dataset Size",
+            y_label="Test Loss",
+            title=f"Dataset Size vs Test Loss ({architecture})",
+            wandb_run=wandb_run
+        )
+        wandb_run.finish()
 
 
 def model_size_experiment(
@@ -597,28 +597,28 @@ def model_size_experiment(
                 test_losses.append(test_loss)
                 wandb_run.finish()
 
-            wandb_run = wandb.init(
-                project=project,
-                name=project,
-                dir=root_dir
-            )
-            plot_scaling_laws(
-                x=parameters,
-                y=train_losses,
-                x_label="Number of Parameters",
-                y_label="Train Loss",
-                title=f"Model Size vs Train Loss ({architecture})",
-                wandb_run=wandb_run
-            )
-            plot_scaling_laws(
-                x=parameters,
-                y=test_losses,
-                x_label="Number of Parameters",
-                y_label="Test Loss",
-                title=f"Model Size vs Test Loss ({architecture})",
-                wandb_run=wandb_run
-            )
-            wandb_run.finish()
+        wandb_run = wandb.init(
+            project=project,
+            name=project,
+            dir=root_dir
+        )
+        plot_scaling_laws(
+            x=parameters,
+            y=train_losses,
+            x_label="Number of Parameters",
+            y_label="Train Loss",
+            title=f"Model Size vs Train Loss ({architecture})",
+            wandb_run=wandb_run
+        )
+        plot_scaling_laws(
+            x=parameters,
+            y=test_losses,
+            x_label="Number of Parameters",
+            y_label="Test Loss",
+            title=f"Model Size vs Test Loss ({architecture})",
+            wandb_run=wandb_run
+        )
+        wandb_run.finish()
 
 
 def main():

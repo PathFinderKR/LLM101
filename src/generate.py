@@ -124,7 +124,7 @@ def main():
     model.to(device)
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model '{args.model}' initialized. Number of Parameters: {num_params}")
-    model.load_state_dict(torch.load(root_dir+f"models/{model_config["name"]}/checkpoints/{model_config["name"]}.pt"))
+    model.load_state_dict(torch.load(root_dir+f"models/{model_config["name"]}/checkpoints/gpt.pt"))
 
 
     # Generate text
