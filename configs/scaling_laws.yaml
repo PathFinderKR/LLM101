@@ -1,7 +1,7 @@
 # Model
 model_size:
   small:
-    context_size: 64
+    context_size: 256
     n_layer: 2
     n_head: 2
     d_embed: 128
@@ -10,16 +10,36 @@ model_size:
     flash_attention: False
   medium:
     context_size: 256
+    n_layer: 4
+    n_head: 4
+    d_embed: 256
+    d_ff: 1024
+    dropout: 0.2
+    flash_attention: False
+  large:
+    context_size: 256
     n_layer: 6
     n_head: 6
     d_embed: 384
     d_ff: 1536
     dropout: 0.2
     flash_attention: False
+  xl:
+    context_size: 256
+    n_layer: 8
+    n_head: 8
+    d_embed: 512
+    d_ff: 2048
+    dropout: 0.3
+    flash_attention: False
 
 # Training
 dataset_size:
   xs: 0.01
+  small: 0.02
+  medium: 0.03
+  large: 0.05
+  xl: 0.1
 
 epochs: 1  # Fixed
 batch_size: 128  # Fixed
@@ -27,7 +47,7 @@ optimizer:
   name: AdamW  # AdamW or SGD
   params:
     lr: 0.0002
-    weight_decay: 0.01
+    weight_decay: 0.1
 scheduler:
   type: cosine  # linear or cosine
   warmup_ratio: 0.1

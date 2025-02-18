@@ -38,11 +38,6 @@ def parse_args():
         default=default_vocab_path,
         help=f"Path to the vocabulary JSON file. Default: {default_vocab_path}"
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug mode."
-    )
     return parser.parse_args()
 
 
@@ -74,12 +69,11 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     ax.legend()
 
     # Log the figure to wandb
-    if wandb_run is not None:
-        wandb.log({title: wandb.Image(fig)})
+    wandb.log({title: wandb.Image(fig)})
     plt.close(fig)
 
 
-def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, grad_clip: float, flops: int, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> (nn.Module, float):
+def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, scheduler: LambdaLR, grad_clip: float, flop_per_step: int, device: torch.device, wandb_run: wandb.sdk.wandb_run.Run) -> (nn.Module, float):
     """
     Train the model for one epoch.
 
@@ -89,7 +83,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         optimizer (Optimizer): Optimizer to use.
         scheduler (lr_scheduler): Learning rate scheduler.
         grad_clip (float): Gradient clipping value.
-        flops (int): Floating point operations per second for the model.
+        flop_per_step (int): Floating point operations per step.
         device (torch.device): Device to run the model on.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
 
@@ -98,9 +92,10 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         train_loss (float): The average loss on the training set.
     """
     model.train()
+    steps = 0
     running_loss = 0.0
     best_train_loss = float("inf")
-    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Training")
+    progress_bar = tqdm(dataloader, total=len(dataloader), desc=f"Training")
     # Charts
     # Train loss vs step
     # Learning rate vs step
@@ -123,31 +118,31 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         running_loss += loss.item()
         if loss.item() < best_train_loss:
             best_train_loss = loss.item()
-        progress_bar.set_postfix(loss=f"{running_loss / (batch_idx + 1):.4f}")
 
-        if wandb_run is not None:
-            wandb_run.log({
-                "Train Loss vs Step": loss.item(),
-                "Learning Rate vs Step": optimizer.param_groups[0]["lr"],
-                "Train Loss vs Compute": loss.item(),
-                "Compute": flops * (batch_idx + 1),
-                "Step": (batch_idx + 1)
-            })
+        steps += 1
+        progress_bar.set_postfix(loss=f"{running_loss / steps:.4f}")
+
+        wandb_run.log({
+            "Train Loss vs Step": loss.item(),
+            "Learning Rate vs Step": optimizer.param_groups[0]["lr"],
+            "Train Loss vs Compute": loss.item(),
+            "Compute": flop_per_step * steps,
+            "Step": steps
+        })
 
     progress_bar.close()
-    print(f"Loss: {running_loss / len(dataloader):.4f}")
+    print(f"Train Loss: {running_loss / len(dataloader):.4f}")
+    return model, best_train_loss, steps
 
-    return model, best_train_loss
 
-
-def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flops: int, wandb_run: wandb.sdk.wandb_run.Run) -> float:
+def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flop_per_step: int, wandb_run: wandb.sdk.wandb_run.Run) -> float:
     """
     Evaluate the model on the validation set.
 
     Args:
         model (nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader for the validation data.
-        flops (int): Floating point operations per second for the model.
+        flop_per_step (int): Floating point operations per step.
         device (torch.device): Device to run the model on.
         wandb_run (wandb.sdk.wandb_run.Run): Wandb run for logging.
 
@@ -156,7 +151,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     """
     model.eval()
     running_loss = 0.0
-    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
+    progress_bar = tqdm(dataloader, total=len(dataloader), desc="Validation")
     # Charts
     # Validation loss vs compute
     wandb_run.define_metric("Compute", hidden=True)
@@ -173,17 +168,13 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     progress_bar.close()
 
     val_loss = running_loss / len(dataloader)
-    compute = flops * len(dataloader)
-    print(f"compute: {compute}")
 
-    if wandb_run is not None:
-        wandb_run.log({
-            "Validation Loss vs Compute": val_loss,
-            "Compute": compute
-        })
+    wandb_run.log({
+        "Validation Loss vs Compute": val_loss,
+        "Compute": flop_per_step * len(dataloader)
+    })
 
     print(f"Validation Loss: {val_loss:.4f}")
-
     return val_loss
 
 
@@ -254,8 +245,7 @@ def compute_experiment(
             num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
             # FLOPs
-            flops = 6 * num_params * len(train_dataset)
-            print(f"FLOPs: {flops}")
+            flop_per_step = 6 * num_params * batch_size
 
             # Initialize the optimizer and scheduler
             optimizer = setup_optimizer(
@@ -272,25 +262,25 @@ def compute_experiment(
             )
 
             # Train the model for one epoch
-            model, train_loss = train_epoch(
+            model, train_loss, steps = train_epoch(
                 model=model,
                 dataloader=train_loader,
                 optimizer=optimizer,
                 scheduler=scheduler,
                 grad_clip=grad_clip,
-                flops=flops,
+                flop_per_step=flop_per_step,
                 device=device,
                 wandb_run=wandb_run
             )
             test_loss = evaluate(
                 model=model,
                 dataloader=val_loader,
-                flops=flops,
+                flop_per_step=flop_per_step,
                 device=device,
                 wandb_run=wandb_run
             )
 
-            compute_values.append(flops)
+            compute_values.append(flop_per_step * steps)
             train_losses.append(train_loss)
             test_losses.append(test_loss)
             wandb_run.finish()
@@ -377,7 +367,7 @@ def dataset_size_experiment(
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
         # FLOPs
-        flops = 6 * num_params * len(train_dataset)
+        flop_per_step = 6 * num_params * batch_size
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -394,20 +384,20 @@ def dataset_size_experiment(
         )
 
         # Train the model for one epoch
-        model, train_loss = train_epoch(
+        model, train_loss, steps = train_epoch(
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
             scheduler=scheduler,
             grad_clip=grad_clip,
-            flops=flops,
+            flop_per_step=flop_per_step,
             device=device,
             wandb_run=wandb_run
         )
         test_loss = evaluate(
             model=model,
             dataloader=val_loader,
-            flops=flops,
+            flop_per_step=flop_per_step,
             device=device,
             wandb_run=wandb_run
         )
@@ -508,7 +498,7 @@ def model_size_experiment(
         print(f"Number of parameters: {num_params}")
 
         # FLOPs
-        flops = 6 * num_params * len(train_dataset)
+        flop_per_step = 6 * num_params * batch_size
 
         # Initialize the optimizer and scheduler
         optimizer = setup_optimizer(
@@ -525,25 +515,26 @@ def model_size_experiment(
         )
 
         # Train the model for one epoch
-        model, train_loss = train_epoch(
+        model, train_loss, steps = train_epoch(
             model=model,
             dataloader=train_loader,
             optimizer=optimizer,
             scheduler=scheduler,
             grad_clip=grad_clip,
-            flops=flops,
+            flop_per_step=flop_per_step,
             device=device,
             wandb_run=wandb_run
         )
         test_loss = evaluate(
             model=model,
             dataloader=val_loader,
-            flops=flops,
+            flop_per_step=flop_per_step,
             device=device,
             wandb_run=wandb_run
         )
 
         parameters.append(num_params)
+        train_losses.append(train_loss)
         test_losses.append(test_loss)
         wandb_run.finish()
 
@@ -563,7 +554,7 @@ def model_size_experiment(
     plot_scaling_laws(
         x=parameters,
         y=test_losses,
-        x_label="Number of Layers",
+        x_label="Number of Parameters",
         y_label="Test Loss",
         title="Model Size vs Test Loss",
         wandb_run=wandb_run
@@ -594,11 +585,7 @@ def main():
 
 
     # Initialize wandb
-    if not args.debug:
-        wandb.login(key=os.environ.get("WANDB_API_KEY"))
-    else:
-        wandb_run = None
-        print("Debug mode enabled")
+    wandb.login(key=os.environ.get("WANDB_API_KEY"))
 
 
     # Initialize the tokenizer
