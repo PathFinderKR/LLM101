@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('Agg')
+from typing import List
 from tqdm import tqdm
 import torch
 from torch import nn
@@ -42,9 +43,17 @@ def parse_args():
     return parser.parse_args()
 
 
-def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
+def plot_scaling_laws(x: List[int], y: List[float], x_label: str, y_label: str, title: str, wandb_run: wandb.sdk.wandb_run.Run):
     """
     Plot the given data in log-log scale and log the figure to wandb.
+
+    Args:
+        x (List[int]): The x-axis data.
+        y (List[float]): The y-axis data.
+        x_label (str): Label for the x-axis.
+        y_label (str): Label for the y-axis.
+        title (str): Title of the plot.
+        wandb_run (wandb.sdk.wandb_run.Run): The current wandb run, used for logging.
     """
     from scipy.stats import linregress
 
@@ -54,7 +63,7 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     slope, intercept, r_value, p_value, std_err = linregress(x_log, y_log)
 
     # Create figure and axis
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(10, 10))
     ax.scatter(x, y, label='Data', alpha=0.7)
 
     # Best fit line in log space
@@ -70,7 +79,53 @@ def plot_scaling_laws(x, y, x_label, y_label, title, wandb_run):
     ax.legend()
 
     # Log the figure to wandb
-    wandb.log({title: wandb.Image(fig)})
+    wandb_run.log({title: wandb.Image(fig)})
+    plt.close(fig)
+
+
+def plot_umap(model: nn.Module, tokenizer: CharTokenizer, title: str, wandb_run: wandb.sdk.wandb_run.Run):
+    """
+    Creates a UMAP projection of the character (or token) embeddings and logs the resulting 2D scatter plot.
+
+    Args:
+        model (nn.Module): The trained model.
+        tokenizer (CharTokenizer): The character-level tokenizer with idx2char mapping.
+        title (str): Title of the plot.
+        wandb_run (wandb.sdk.wandb_run.Run): The current wandb run, used for logging.
+    """
+    import umap
+
+    # Extract token embeddings from the model
+    model.eval()
+    with torch.no_grad():
+        if hasattr(model, "token_embedding"):
+            embeddings = model.token_embedding.weight.detach().cpu().numpy()
+        elif hasattr(model, "embedding"):
+            embeddings = model.embedding.weight.detach().cpu().numpy()
+        else:
+            raise ValueError("Unable to locate the embedding layer in the provided model.")
+
+    # Reduce the dimensionality to 2D with UMAP
+    reducer = umap.UMAP(
+        n_neighbors=5,
+        min_dist=0.3,
+        metric="cosine"
+    )
+    embedding_2d = reducer.fit_transform(embeddings)  # (vocab_size, 2)
+
+    # Create the figure and axis
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_title(f"Token Embeddings UMAP {title}")
+
+    # Plot each character
+    for i in range(tokenizer.vocab_size):
+        char = tokenizer.idx2char.get(i, "<UNK>")
+        x, y = embedding_2d[i]
+        ax.scatter(x, y, color="blue", alpha=0.7)
+        ax.text(x, y, char, fontsize=9, alpha=0.9)
+
+    # Log the figure to wandb
+    wandb_run.log({f"Token Embeddings UMAP {title}": wandb.Image(fig)})
     plt.close(fig)
 
 
@@ -203,9 +258,10 @@ def compute_experiment(
 
         for model_size, model_config in model_configs.items():
             for dataset_size in dataset_sizes:
+                name = f"{architecture}({model_size}), Dataset({dataset_size})"
                 wandb_run = wandb.init(
                     project=project,
-                    name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                    name=name,
                     dir=root_dir
                 )
 
@@ -292,11 +348,13 @@ def compute_experiment(
                     wandb_run=wandb_run
                 )
 
+                plot_umap(model, tokenizer, name, wandb_run)
                 compute_values.append(flop_per_step * steps)
                 train_losses.append(train_loss)
                 test_losses.append(test_loss)
                 wandb_run.finish()
 
+        print(f"architecture: {architecture}")
         wandb_run = wandb.init(
             project=project,
             name=project,
@@ -354,9 +412,10 @@ def dataset_size_experiment(
             if model_size != "large":
                 continue
             for dataset_size in dataset_sizes:
+                name = f"{architecture}({model_size}), Dataset({dataset_size})"
                 wandb_run = wandb.init(
                     project=project,
-                    name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                    name=name,
                     dir=root_dir
                 )
 
@@ -442,6 +501,7 @@ def dataset_size_experiment(
                     wandb_run=wandb_run
                 )
 
+                plot_umap(model, tokenizer, name, wandb_run)
                 num_tokens.append(len(train_dataset))
                 train_losses.append(train_loss)
                 test_losses.append(test_loss)
@@ -502,12 +562,12 @@ def model_size_experiment(
 
         for model_size, model_config in model_configs.items():
             for dataset_size in dataset_sizes:
-                print(f"Model size: {model_size}, Dataset size: {dataset_size}")
                 if dataset_size != "large":
                     continue
+                name = f"{architecture}({model_size}), Dataset({dataset_size})"
                 wandb_run = wandb.init(
                     project=project,
-                    name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                    name=name,
                     dir=root_dir
                 )
 
@@ -593,6 +653,7 @@ def model_size_experiment(
                     wandb_run=wandb_run
                 )
 
+                plot_umap(model, tokenizer, name, wandb_run)
                 parameters.append(num_params)
                 train_losses.append(train_loss)
                 test_losses.append(test_loss)
@@ -619,6 +680,7 @@ def model_size_experiment(
             title=f"Model Size vs Test Loss ({architecture})",
             wandb_run=wandb_run
         )
+
         wandb_run.finish()
 
 

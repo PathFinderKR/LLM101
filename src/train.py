@@ -510,6 +510,9 @@ def main():
         print(f"Error during training: {e}")
 
 
+    # Plot the UMAP of Token Embeddings
+
+
     # Save the model
     if not args.debug:
         save_checkpoint(model=model, file_path=root_dir+f"models/{model_config["name"]}/checkpoints/{train_config["project"]}.pt")
