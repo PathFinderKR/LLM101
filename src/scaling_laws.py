@@ -369,7 +369,7 @@ def dataset_size_experiment(
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
             print(f"Number of tokens: {len(train_dataset)}")
 
-            # Initialize the model sdf
+            # Initialize the model
             if architecture == "gpt":
                 model = GPT(GPTConfig(
                     vocab_size=tokenizer.vocab_size,
