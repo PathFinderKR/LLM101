@@ -133,7 +133,6 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
         })
 
     progress_bar.close()
-    print(f"Train Loss: {running_loss / len(dataloader):.4f}")
     return model, best_train_loss, steps
 
 
@@ -154,10 +153,6 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     model.eval()
     running_loss = 0.0
     progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
-    # Charts
-    # Validation loss vs compute
-    wandb_run.define_metric("Compute", hidden=True)
-    wandb_run.define_metric("Validation Loss vs Compute", step_metric="Compute")
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in progress_bar:
@@ -171,12 +166,10 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
 
     val_loss = running_loss / len(dataloader)
 
-    wandb_run.log({
-        "Validation Loss vs Compute": val_loss,
-        "Compute": flop_per_step * len(dataloader)
-    })
+    wandb_run.log(
+        {"Validation Loss vs Compute": val_loss},
+        step=flop_per_step * len(dataloader))
 
-    print(f"Validation Loss: {val_loss:.4f}")
     return val_loss
 
 
@@ -204,20 +197,19 @@ def compute_experiment(
         device (torch.device): Device for training.
         root_dir (str): Root directory of the project.
     """
-    project = f"Compute vs Loss"
+    project = "Compute vs Loss"
     for architecture, model_configs in model_architectures.items():
         compute_values = []
         train_losses = []
         test_losses = []
 
-        for model_size, model_config in model_configs:
+        for model_size, model_config in model_configs.items():
             for dataset_size in dataset_sizes:
                 wandb_run = wandb.init(
                     project=project,
                     name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
                     dir=root_dir
                 )
-                print(f"Wandb run initialized: {wandb_run.id}")
 
                 # Subset the training data
                 subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
@@ -257,6 +249,7 @@ def compute_experiment(
                 else:
                     raise ValueError(f"Model architecture {architecture} is not supported")
                 num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                print(f"Number of parameters: {num_params}")
 
                 # FLOPs
                 flop_per_step = 6 * num_params * batch_size
@@ -348,117 +341,118 @@ def dataset_size_experiment(
         device (torch.device): Device for training.
         root_dir (str): Root directory of the project.
     """
-    project = f"Dataset size vs Loss"
+    project = "Dataset size vs Loss"
     for architecture, model_configs in model_architectures.items():
         num_tokens = []
         train_losses = []
         test_losses = []
 
-        for dataset_size in dataset_sizes:
+        for model_size, model_config in model_configs.items():
+            for dataset_size in dataset_sizes:
+                wandb_run = wandb.init(
+                    project=project,
+                    name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                    dir=root_dir
+                )
+
+                subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
+                train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+                val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+                val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+                print(f"Number of tokens: {len(train_dataset)}")
+
+                # Initialize the model sdf
+                if architecture == "gpt":
+                    model = GPT(GPTConfig(
+                        vocab_size=tokenizer.vocab_size,
+                        context_size=model_config["context_size"],
+                        n_layer=model_config["n_layer"],
+                        n_head=model_config["n_head"],
+                        d_embed=model_config["d_embed"],
+                        d_ff=model_config["d_ff"],
+                        dropout=model_config["dropout"]
+                    )).to(device)
+                elif architecture == "mlp":
+                    model = MLP(MLPConfig(
+                        vocab_size=tokenizer.vocab_size,
+                        context_size=model_config["context_size"],
+                        d_embed=model_config["d_embed"],
+                        d_ff=model_config["d_ff"],
+                        dropout=model_config["dropout"]
+                    )).to(device)
+                else:
+                    raise ValueError(f"Model architecture {architecture} is not supported")
+                num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                print(f"Number of parameters: {num_params}")
+
+                # FLOPs
+                flop_per_step = 6 * num_params * batch_size
+
+                # Initialize the optimizer and scheduler
+                optimizer = setup_optimizer(
+                    model=model,
+                    optimizer_name=optimizer_name,
+                    lr=lr,
+                    weight_decay=weight_decay
+                )
+                scheduler = setup_scheduler(
+                    optimizer=optimizer,
+                    scheduler_type=scheduler_type,
+                    warmup_ratio=warmup_ratio,
+                    total_steps=len(train_loader) * 1
+                )
+
+                # Train the model for one epoch
+                model, train_loss, steps = train_epoch(
+                    model=model,
+                    dataloader=train_loader,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    grad_clip=grad_clip,
+                    flop_per_step=flop_per_step,
+                    device=device,
+                    wandb_run=wandb_run
+                )
+                test_loss = evaluate(
+                    model=model,
+                    dataloader=val_loader,
+                    flop_per_step=flop_per_step,
+                    device=device,
+                    wandb_run=wandb_run
+                )
+
+                num_tokens.append(len(train_dataset))
+                train_losses.append(train_loss)
+                test_losses.append(test_loss)
+                wandb_run.finish()
+
             wandb_run = wandb.init(
                 project=project,
-                name=f"{architecture}({model_configs[0][0]}) - Dataset size: {dataset_size}",
+                name=project,
                 dir=root_dir
             )
-            print(f"Wandb run initialized: {wandb_run.id}")
-
-            subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
-            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_configs[0][1]["context_size"])
-            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_configs[0][1]["context_size"])
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-            val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-            print(f"Number of tokens: {len(train_dataset)}")
-
-            # Initialize the model
-            if architecture == "gpt":
-                model = GPT(GPTConfig(
-                    vocab_size=tokenizer.vocab_size,
-                    context_size=model_config["context_size"],
-                    n_layer=model_config["n_layer"],
-                    n_head=model_config["n_head"],
-                    d_embed=model_config["d_embed"],
-                    d_ff=model_config["d_ff"],
-                    dropout=model_config["dropout"]
-                )).to(device)
-            elif architecture == "mlp":
-                model = MLP(MLPConfig(
-                    vocab_size=tokenizer.vocab_size,
-                    context_size=model_config["context_size"],
-                    d_embed=model_config["d_embed"],
-                    d_ff=model_config["d_ff"],
-                    dropout=model_config["dropout"]
-                )).to(device)
-            else:
-                raise ValueError(f"Model architecture {architecture} is not supported")
-            num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-            # FLOPs
-            flop_per_step = 6 * num_params * batch_size
-
-            # Initialize the optimizer and scheduler
-            optimizer = setup_optimizer(
-                model=model,
-                optimizer_name=optimizer_name,
-                lr=lr,
-                weight_decay=weight_decay
-            )
-            scheduler = setup_scheduler(
-                optimizer=optimizer,
-                scheduler_type=scheduler_type,
-                warmup_ratio=warmup_ratio,
-                total_steps=len(train_loader) * 1
-            )
-
-            # Train the model for one epoch
-            model, train_loss, steps = train_epoch(
-                model=model,
-                dataloader=train_loader,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                grad_clip=grad_clip,
-                flop_per_step=flop_per_step,
-                device=device,
+            plot_scaling_laws(
+                x=num_tokens,
+                y=train_losses,
+                x_label="Dataset Size",
+                y_label="Train Loss",
+                title=f"Dataset Size vs Train Loss ({architecture})",
                 wandb_run=wandb_run
             )
-            test_loss = evaluate(
-                model=model,
-                dataloader=val_loader,
-                flop_per_step=flop_per_step,
-                device=device,
+            plot_scaling_laws(
+                x=num_tokens,
+                y=test_losses,
+                x_label="Dataset Size",
+                y_label="Test Loss",
+                title=f"Dataset Size vs Test Loss ({architecture})",
                 wandb_run=wandb_run
             )
-
-            num_tokens.append(len(train_dataset))
-            train_losses.append(train_loss)
-            test_losses.append(test_loss)
             wandb_run.finish()
-
-        wandb_run = wandb.init(
-            project=project,
-            name=project,
-            dir=root_dir
-        )
-        plot_scaling_laws(
-            x=num_tokens,
-            y=train_losses,
-            x_label="Dataset Size",
-            y_label="Train Loss",
-            title=f"Dataset Size vs Train Loss ({model_arch})",
-            wandb_run=wandb_run
-        )
-        plot_scaling_laws(
-            x=num_tokens,
-            y=test_losses,
-            x_label="Dataset Size",
-            y_label="Test Loss",
-            title=f"Dataset Size vs Test Loss ({model_arch})",
-            wandb_run=wandb_run
-        )
-        wandb_run.finish()
 
 
 def model_size_experiment(
-        model_sizes: dict, dataset_size: float,
+        model_architectures: dict, dataset_size: float,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
         optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, root_dir: str
@@ -467,7 +461,7 @@ def model_size_experiment(
     Model size vs test loss scaling laws.
 
     Args:
-        model_sizes (dict): Dictionary with the model sizes.
+        model_architectures (dict): Dictionary with the model architectures and configurations.
         dataset_size (float): Dictionary with the dataset sizes.
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
@@ -481,25 +475,22 @@ def model_size_experiment(
         device (torch.device): Device for training.
         root_dir (str): Root directory of the project.
     """
-    model_architecture = ["bigram", "mlp", "gpt"]
-    for model_arch in model_architecture:
-        project = f"Model size vs Loss"
+    project = f"Model size vs Loss"
+    for architecture, model_configs in model_architectures.items():
         parameters = []
         train_losses = []
         test_losses = []
 
-
-        for model_size in model_sizes:
+        for model_size, model_config in model_configs.items():
             wandb_run = wandb.init(
                 project=project,
-                name=f"{model_arch}({model_size}) - Dataset size: {dataset_size}",
+                name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
                 dir=root_dir
             )
-            print(f"Wandb run initialized: {wandb_run.id}")
 
             subset_train_text = train_text[:int(len(train_text) * dataset_size)]
-            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
-            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_sizes[model_size]["context_size"])
+            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
             if model_size == "small":
                 batch_size = 512
             elif model_size == "medium":
@@ -512,6 +503,7 @@ def model_size_experiment(
                 batch_size = 128
             train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
             val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+            print(f"Number of tokens: {len(train_dataset)}")
 
             # Initialize the model
             if architecture == "gpt":
@@ -588,7 +580,7 @@ def model_size_experiment(
             y=train_losses,
             x_label="Number of Parameters",
             y_label="Train Loss",
-            title=f"Model Size vs Train Loss ({model_arch})",
+            title=f"Model Size vs Train Loss ({architecture})",
             wandb_run=wandb_run
         )
         plot_scaling_laws(
@@ -596,7 +588,7 @@ def model_size_experiment(
             y=test_losses,
             x_label="Number of Parameters",
             y_label="Test Loss",
-            title=f"Model Size vs Test Loss ({model_arch})",
+            title=f"Model Size vs Test Loss ({architecture})",
             wandb_run=wandb_run
         )
         wandb_run.finish()
