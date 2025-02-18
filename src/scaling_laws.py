@@ -95,7 +95,7 @@ def train_epoch(model: nn.Module, dataloader: DataLoader, optimizer: Optimizer, 
     steps = 0
     running_loss = 0.0
     best_train_loss = float("inf")
-    progress_bar = tqdm(dataloader, total=len(dataloader), desc=f"Training")
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Training")
     # Charts
     # Train loss vs step
     # Learning rate vs step
@@ -151,7 +151,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
     """
     model.eval()
     running_loss = 0.0
-    progress_bar = tqdm(dataloader, total=len(dataloader), desc="Validation")
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc="Validation")
     # Charts
     # Validation loss vs compute
     wandb_run.define_metric("Compute", hidden=True)
