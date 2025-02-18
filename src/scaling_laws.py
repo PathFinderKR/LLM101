@@ -19,7 +19,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.utils import set_seed, configure_device, load_text, split_text, load_config
 from src.tokenizer import CharTokenizer, BPETokenizer
 from src.train import TextDataset, initialize_tokenizer, setup_optimizer, setup_scheduler
-from models.bigram.bigram import Bigram, BigramConfig
 from models.mlp.mlp import MLP, MLPConfig
 from models.gpt.gpt import GPT, GPTConfig
 
@@ -176,7 +175,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, flo
 def compute_experiment(
         model_architectures: dict, dataset_sizes: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
-        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        optimizer_name: str, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, root_dir: str
 ):
     """
@@ -189,7 +188,6 @@ def compute_experiment(
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
         optimizer_name (str): Name of the optimizer.
-        lr (float): Learning rate.
         weight_decay (float): Weight decay.
         scheduler_type (str): Type of the scheduler.
         warmup_ratio (float): Ratio of the warmup steps.
@@ -217,12 +215,19 @@ def compute_experiment(
                 val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
                 if model_size == "small":
                     batch_size = 512
+                    lr = 0.001
                 elif model_size == "medium":
                     batch_size = 128
+                    lr = 0.0005
                 elif model_size == "large":
                     batch_size = 64
+                    lr = 0.0001
+                elif model_size == "xl":
+                    batch_size = 32
+                    lr = 0.00005
                 else:
                     batch_size = 128
+                    lr = 0.0001
                 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
                 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
                 print(f"Number of tokens: {len(train_dataset)}")
@@ -318,8 +323,8 @@ def compute_experiment(
 
 def dataset_size_experiment(
         model_architectures: dict, dataset_sizes: dict,
-        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer, batch_size: int,
-        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
+        optimizer_name: str, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, root_dir: str
 ):
     """
@@ -331,9 +336,7 @@ def dataset_size_experiment(
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
-        batch_size (int): Batch size the DataLoaders.
         optimizer_name (str): Name of the optimizer.
-        lr (float): Learning rate.
         weight_decay (float): Weight decay.
         scheduler_type (str): Type of the scheduler.
         warmup_ratio (float): Ratio of the warmup steps.
@@ -348,6 +351,8 @@ def dataset_size_experiment(
         test_losses = []
 
         for model_size, model_config in model_configs.items():
+            if model_size != "large":
+                continue
             for dataset_size in dataset_sizes:
                 wandb_run = wandb.init(
                     project=project,
@@ -358,6 +363,21 @@ def dataset_size_experiment(
                 subset_train_text = train_text[:int(len(train_text) * dataset_sizes[dataset_size])]
                 train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
                 val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+                if model_size == "small":
+                    batch_size = 512
+                    lr = 0.001
+                elif model_size == "medium":
+                    batch_size = 128
+                    lr = 0.0005
+                elif model_size == "large":
+                    batch_size = 64
+                    lr = 0.0001
+                elif model_size == "xl":
+                    batch_size = 32
+                    lr = 0.00005
+                else:
+                    batch_size = 128
+                    lr = 0.0001
                 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
                 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
                 print(f"Number of tokens: {len(train_dataset)}")
@@ -452,9 +472,9 @@ def dataset_size_experiment(
 
 
 def model_size_experiment(
-        model_architectures: dict, dataset_size: float,
+        model_architectures: dict, dataset_sizes: dict,
         train_text: str, val_text: str, tokenizer: CharTokenizer | BPETokenizer,
-        optimizer_name: str, lr: float, weight_decay: float, scheduler_type: str, warmup_ratio: float,
+        optimizer_name: str, weight_decay: float, scheduler_type: str, warmup_ratio: float,
         grad_clip: float, device: torch.device, root_dir: str
 ):
     """
@@ -462,12 +482,11 @@ def model_size_experiment(
 
     Args:
         model_architectures (dict): Dictionary with the model architectures and configurations.
-        dataset_size (float): Dictionary with the dataset sizes.
+        dataset_sizes (dict): Dictionary with the dataset sizes.
         train_text (str): Text data for training.
         val_text (str): Text data for validation.
         tokenizer (CharTokenizer | BPETokenizer): Tokenizer instance.
         optimizer_name (str): Name of the optimizer.
-        lr (float): Learning rate.
         weight_decay (float): Weight decay.
         scheduler_type (str): Type of the scheduler.
         warmup_ratio (float): Ratio of the warmup steps.
@@ -482,116 +501,124 @@ def model_size_experiment(
         test_losses = []
 
         for model_size, model_config in model_configs.items():
+            for dataset_size in dataset_sizes:
+                if model_size != "large":
+                    continue
+                wandb_run = wandb.init(
+                    project=project,
+                    name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                    dir=root_dir
+                )
+
+                subset_train_text = train_text[:int(len(train_text) * dataset_size)]
+                train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+                val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
+                if model_size == "small":
+                    batch_size = 512
+                    lr = 0.001
+                elif model_size == "medium":
+                    batch_size = 128
+                    lr = 0.0005
+                elif model_size == "large":
+                    batch_size = 64
+                    lr = 0.0001
+                elif model_size == "xl":
+                    batch_size = 32
+                    lr = 0.00005
+                else:
+                    batch_size = 128
+                    lr = 0.0001
+                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+                val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+                print(f"Number of tokens: {len(train_dataset)}")
+
+                # Initialize the model
+                if architecture == "gpt":
+                    model = GPT(GPTConfig(
+                        vocab_size=tokenizer.vocab_size,
+                        context_size=model_config["context_size"],
+                        n_layer=model_config["n_layer"],
+                        n_head=model_config["n_head"],
+                        d_embed=model_config["d_embed"],
+                        d_ff=model_config["d_ff"],
+                        dropout=model_config["dropout"]
+                    )).to(device)
+                elif architecture == "mlp":
+                    model = MLP(MLPConfig(
+                        vocab_size=tokenizer.vocab_size,
+                        context_size=model_config["context_size"],
+                        d_embed=model_config["d_embed"],
+                        d_ff=model_config["d_ff"],
+                        dropout=model_config["dropout"]
+                    )).to(device)
+                else:
+                    raise ValueError(f"Model architecture {architecture} is not supported")
+                num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                print(f"Number of parameters: {num_params}")
+
+                # FLOPs
+                flop_per_step = 6 * num_params * batch_size
+
+                # Initialize the optimizer and scheduler
+                optimizer = setup_optimizer(
+                    model=model,
+                    optimizer_name=optimizer_name,
+                    lr=lr,
+                    weight_decay=weight_decay
+                )
+                scheduler = setup_scheduler(
+                    optimizer=optimizer,
+                    scheduler_type=scheduler_type,
+                    warmup_ratio=warmup_ratio,
+                    total_steps=len(train_loader) * 1
+                )
+
+                # Train the model for one epoch
+                model, train_loss, steps = train_epoch(
+                    model=model,
+                    dataloader=train_loader,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    grad_clip=grad_clip,
+                    flop_per_step=flop_per_step,
+                    device=device,
+                    wandb_run=wandb_run
+                )
+                test_loss = evaluate(
+                    model=model,
+                    dataloader=val_loader,
+                    flop_per_step=flop_per_step,
+                    device=device,
+                    wandb_run=wandb_run
+                )
+
+                parameters.append(num_params)
+                train_losses.append(train_loss)
+                test_losses.append(test_loss)
+                wandb_run.finish()
+
             wandb_run = wandb.init(
                 project=project,
-                name=f"{architecture}({model_size}) - Dataset size: {dataset_size}",
+                name=project,
                 dir=root_dir
             )
-
-            subset_train_text = train_text[:int(len(train_text) * dataset_size)]
-            train_dataset = TextDataset(text=subset_train_text, tokenizer=tokenizer, context_size=model_config["context_size"])
-            val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, context_size=model_config["context_size"])
-            if model_size == "small":
-                batch_size = 512
-            elif model_size == "medium":
-                batch_size = 128
-            elif model_size == "large":
-                batch_size = 64
-            elif model_size == "xl":
-                batch_size = 32
-            else:
-                batch_size = 128
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-            val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-            print(f"Number of tokens: {len(train_dataset)}")
-
-            # Initialize the model
-            if architecture == "gpt":
-                model = GPT(GPTConfig(
-                    vocab_size=tokenizer.vocab_size,
-                    context_size=model_config["context_size"],
-                    n_layer=model_config["n_layer"],
-                    n_head=model_config["n_head"],
-                    d_embed=model_config["d_embed"],
-                    d_ff=model_config["d_ff"],
-                    dropout=model_config["dropout"]
-                )).to(device)
-            elif architecture == "mlp":
-                model = MLP(MLPConfig(
-                    vocab_size=tokenizer.vocab_size,
-                    context_size=model_config["context_size"],
-                    d_embed=model_config["d_embed"],
-                    d_ff=model_config["d_ff"],
-                    dropout=model_config["dropout"]
-                )).to(device)
-            else:
-                raise ValueError(f"Model architecture {architecture} is not supported")
-            num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            print(f"Number of parameters: {num_params}")
-
-            # FLOPs
-            flop_per_step = 6 * num_params * batch_size
-
-            # Initialize the optimizer and scheduler
-            optimizer = setup_optimizer(
-                model=model,
-                optimizer_name=optimizer_name,
-                lr=lr,
-                weight_decay=weight_decay
-            )
-            scheduler = setup_scheduler(
-                optimizer=optimizer,
-                scheduler_type=scheduler_type,
-                warmup_ratio=warmup_ratio,
-                total_steps=len(train_loader) * 1
-            )
-
-            # Train the model for one epoch
-            model, train_loss, steps = train_epoch(
-                model=model,
-                dataloader=train_loader,
-                optimizer=optimizer,
-                scheduler=scheduler,
-                grad_clip=grad_clip,
-                flop_per_step=flop_per_step,
-                device=device,
+            plot_scaling_laws(
+                x=parameters,
+                y=train_losses,
+                x_label="Number of Parameters",
+                y_label="Train Loss",
+                title=f"Model Size vs Train Loss ({architecture})",
                 wandb_run=wandb_run
             )
-            test_loss = evaluate(
-                model=model,
-                dataloader=val_loader,
-                flop_per_step=flop_per_step,
-                device=device,
+            plot_scaling_laws(
+                x=parameters,
+                y=test_losses,
+                x_label="Number of Parameters",
+                y_label="Test Loss",
+                title=f"Model Size vs Test Loss ({architecture})",
                 wandb_run=wandb_run
             )
-
-            parameters.append(num_params)
-            train_losses.append(train_loss)
-            test_losses.append(test_loss)
             wandb_run.finish()
-
-        wandb_run = wandb.init(
-            project=project,
-            name=project,
-            dir=root_dir
-        )
-        plot_scaling_laws(
-            x=parameters,
-            y=train_losses,
-            x_label="Number of Parameters",
-            y_label="Train Loss",
-            title=f"Model Size vs Train Loss ({architecture})",
-            wandb_run=wandb_run
-        )
-        plot_scaling_laws(
-            x=parameters,
-            y=test_losses,
-            x_label="Number of Parameters",
-            y_label="Test Loss",
-            title=f"Model Size vs Test Loss ({architecture})",
-            wandb_run=wandb_run
-        )
-        wandb_run.finish()
 
 
 def main():
@@ -641,7 +668,6 @@ def main():
             val_text=val_text,
             tokenizer=tokenizer,
             optimizer_name=scaling_config["optimizer"]["name"],
-            lr=scaling_config["optimizer"]["params"]["lr"],
             weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
             scheduler_type=scaling_config["scheduler"]["type"],
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
@@ -655,9 +681,7 @@ def main():
             train_text=train_text,
             val_text=val_text,
             tokenizer=tokenizer,
-            batch_size=scaling_config["batch_size"],
             optimizer_name=scaling_config["optimizer"]["name"],
-            lr=scaling_config["optimizer"]["params"]["lr"],
             weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
             scheduler_type=scaling_config["scheduler"]["type"],
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
@@ -667,12 +691,11 @@ def main():
         )
         model_size_experiment(
             model_architectures=model_architectures,
-            dataset_size=dataset_sizes["medium"],
+            dataset_sizes=dataset_sizes,
             train_text=train_text,
             val_text=val_text,
             tokenizer=tokenizer,
             optimizer_name=scaling_config["optimizer"]["name"],
-            lr=scaling_config["optimizer"]["params"]["lr"],
             weight_decay=scaling_config["optimizer"]["params"]["weight_decay"],
             scheduler_type=scaling_config["scheduler"]["type"],
             warmup_ratio=scaling_config["scheduler"]["warmup_ratio"],
