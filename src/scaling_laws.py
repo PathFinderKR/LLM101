@@ -85,7 +85,7 @@ def plot_scaling_laws(x: List[int], y: List[float], x_label: str, y_label: str, 
 
 def plot_umap(model: nn.Module, tokenizer: CharTokenizer, title: str, wandb_run: wandb.sdk.wandb_run.Run):
     """
-    Creates a UMAP projection of the character (or token) embeddings and logs the resulting 2D scatter plot.
+    Plots a UMAP projection of the token embeddings and logs the resulting 2D scatter plot to wandb.
 
     Args:
         model (nn.Module): The trained model.
